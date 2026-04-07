@@ -560,8 +560,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
               const duration = Math.max(0, audio.duration || 0);
 
               // Advanced Segment Looping Mechanism
-              const activeLoopEnd = state.loopEndTime === 0 ? duration : state.loopEndTime;
-              if (state.loopSegmentEnabled && activeLoopEnd > 0 && audio.currentTime >= activeLoopEnd) {
+              if (state.loopSegmentEnabled && state.loopEndTime > 0 && audio.currentTime >= state.loopEndTime) {
                   audio.currentTime = state.loopStartTime;
                   if (!audio.paused) audio.play();
               }
@@ -748,7 +747,9 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
         isPlaying: true,
         isLoadingNext: false,
         audio: audio,
-        lyrics: null
+        lyrics: null,
+        loopStartTime: 0,
+        loopEndTime: audio.duration || song.duration || 0
       });
 
       // FIX #1 (BULLETPROOF): Never call MusicControls.create() with duration=0.

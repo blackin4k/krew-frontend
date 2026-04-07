@@ -63,6 +63,7 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet"
 import { toast } from "sonner"
+import { Capacitor } from "@capacitor/core";
 
 const formatTime = (seconds: number) => {
   if (!seconds || isNaN(seconds)) return "0:00"
@@ -325,22 +326,12 @@ export default function Player() {
   const [visualizerMode, setVisualizerMode] = useState<'wave' | 'bar' | 'circle'>('wave')
   const [showVisualizer, setShowVisualizer] = useState(true)
   const [optionsOpen, setOptionsOpen] = useState(false);
-  
+
   // Segment Loop dragging
   const [isLoopStartDragging, setIsLoopStartDragging] = useState(false)
   const [isLoopEndDragging, setIsLoopEndDragging] = useState(false)
   const [localLoopStart, setLocalLoopStart] = useState(0)
   const [localLoopEnd, setLocalLoopEnd] = useState(0)
-  const [showLoopControls, setShowLoopControls] = useState(false)
-
-  useEffect(() => {
-    if (!isLoopStartDragging) setLocalLoopStart(loopStartTime);
-    if (!isLoopEndDragging) setLocalLoopEnd(loopEndTime);
-  }, [loopStartTime, loopEndTime, isLoopStartDragging, isLoopEndDragging]);
-
-  // Wait until song data matches to determine status safely
-  const downloadedStatus = currentSong ? downloadedSongs.some(s => s.id === currentSong.id) : false;
-  const downloadingStatus = currentSong ? isDownloading[currentSong.id] : false;
 
   useEffect(() => {
     if (!isDragging) {
@@ -433,16 +424,6 @@ export default function Player() {
 
   if (!currentSong) return null;
 
-  const handleMute = () => {
-    if (muted) {
-      setVolume(previousVolume.current)
-    } else {
-      previousVolume.current = volume
-      setVolume(0)
-    }
-    setMuted(!muted)
-  }
-
   const toggleLike = async () => {
     if (!currentSong) return
     try {
@@ -457,9 +438,6 @@ export default function Player() {
       console.error("Like error", e)
     }
   }
-
-
-  /* ================= EXPANDED PLAYER (Full Screen) ================= */
 
   const handleShare = async () => {
     if (!currentSong) return;
@@ -484,457 +462,8 @@ export default function Player() {
   const handleCast = () => {
     // Placeholder for casting
     toast.info("Searching for Cast devices...");
-    // In a real implementation with capacitor-cast, this would open the picker.
-    // For now, we just show the UI as requested.
   }
 
-
-  const ExpandedPlayer = (
-    <AnimatePresence>
-      {expanded && (
-        <motion.div
-          key="expanded"
-          initial={{ opacity: 0, y: "100%" }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: "100%" }}
-          transition={{ type: "spring", damping: 30, stiffness: 300 }}
-          drag="y"
-          dragConstraints={{ top: 0, bottom: 0 }}
-          dragElastic={{ top: 0, bottom: 0.2 }} // Only pull down
-          onDragEnd={(_, info) => {
-            if (info.offset.y > 150 || info.velocity.y > 500) {
-              setExpanded(false);
-            }
-          }}
-          className="fixed inset-0 z-50 flex flex-col bg-[#050505] pt-safe"
-        >
-          {/* BACKGROUND - Blurred Cover Image */}
-          <div className="absolute inset-0 overflow-hidden pointer-events-none">
-            <div className="absolute inset-0 bg-black" />
-            {coverUrl && (
-              <motion.img
-                key={coverUrl}
-                src={coverUrl}
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 0.6 }}
-                transition={{ duration: 1 }}
-                className="w-full h-full object-cover blur-[80px] scale-125 opacity-50"
-              />
-            )}
-            <div className="absolute inset-0 bg-black/40" />
-            <div className="absolute inset-0 bg-gradient-to-t from-[#050505] via-transparent to-transparent" />
-          </div>
-
-          {/* VISUALIZER - Matches Desktop (Clean) */}
-          {showVisualizer && visualizerColors && !showDashboard && (
-            <Visualizer
-              className="absolute bottom-0 left-0 w-full h-[90%] pointer-events-none z-0"
-              colors={visualizerColors}
-              mode={visualizerMode}
-            />
-          )}
-
-          {/* DASHBOARD OVERLAY */}
-          <AnimatePresence>
-            {showDashboard && (
-              <>
-                {/* 🔥 BACKGROUND DIM LAYER */}
-                <motion.div
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  transition={{ duration: 0.2 }}
-                  className="absolute inset-0 bg-black/50 backdrop-blur-sm z-[55]"
-                  onClick={() => setShowDashboard(false)}
-                />
-
-                {/* 🎧 BOTTOM SHEET */}
-                <motion.div
-                  initial={{ y: "100%" }}
-                  animate={{ y: 0 }}
-                  exit={{ y: "100%" }}
-                  transition={{ type: "spring", damping: 25, stiffness: 250 }}
-                  drag={!showDashboard ? "y" : false}
-                  dragConstraints={{ top: 0, bottom: 0 }}
-                  dragElastic={{ bottom: 0.3 }}
-                  onPointerDown={(e) => e.stopPropagation()}
-                  onDragEnd={(_, info) => {
-                    if (info.offset.y > 120 || info.velocity.y > 500) {
-                      setShowDashboard(false);
-                    }
-                  }}
-                  className="
-                    absolute bottom-0 left-0 right-0 
-                    h-[min(75%, 500px)] z-[60] 
-                    bg-[#0a0a0a]/95 backdrop-blur-2xl
-                    rounded-t-3xl border-t border-white/10
-                    shadow-[0_-20px_60px_rgba(0,0,0,0.9)]
-                    flex flex-col
-                  "
-                >
-                  {/* 🧲 HANDLE BAR */}
-                  <div className="w-10 h-1 bg-white/20 rounded-full mx-auto my-3" />
-
-                  {/* 📀 DASHBOARD CONTENT */}
-                  <div className="flex-1 overflow-hidden pb-4">
-                    <AudioDashboard
-                      className="w-full h-full"
-                      color={uiColor}
-                      onClose={() => setShowDashboard(false)}
-                    />
-                  </div>
-                </motion.div>
-              </>
-            )}
-          </AnimatePresence>
-
-          {/* LYRICS OVERLAY - Modern Design */}
-          <AnimatePresence>
-            {showLyrics && (
-              <LyricsOverlay
-                lyrics={lyrics}
-                progress={progress}
-                onSeek={setProgress}
-                coverUrl={coverUrl}
-                uiColor={uiColor}
-              />
-            )}
-          </AnimatePresence>
-
-          {/* Lyrics Close Button - Floating */}
-          {showLyrics && (
-            <motion.button
-              initial={{ opacity: 0, scale: 0.8 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.8 }}
-              onClick={() => setShowLyrics(false)}
-              className="fixed top-4 right-4 z-[60] p-3 rounded-full bg-black/50 backdrop-blur-xl hover:bg-black/70 transition-colors border border-white/10"
-            >
-              <X className="h-5 w-5 text-white" />
-            </motion.button>
-          )}
-
-          {/* CONTENT CONTAINER - Flex Column */}
-          <div className="relative z-20 flex flex-col h-full w-full px-6 pb-12">
-
-            {/* 1. TOP BAR - Drag Handle Only */}
-            <div className="flex items-center justify-center h-8 shrink-0 w-full mt-4 mb-4">
-              <div className="w-10 h-1 rounded-full bg-white/20" />
-            </div>
-
-            {/* 2. ARTWORK */}
-            <div className="flex-1 flex items-center justify-center min-h-0 py-4 relative">
-              <motion.div
-                className="relative aspect-square w-full max-w-[340px] rounded-[18px] z-10"
-                style={{
-                  boxShadow: `0 10px 40px -10px ${uiColor}50`
-                }}
-                animate={{
-                  scale: isPlaying ? 1.02 : 1,
-                }}
-                transition={{
-                  duration: 0.5,
-                  ease: "easeOut"
-                }}
-              >
-                <div className="absolute inset-0 rounded-[18px] overflow-hidden bg-[#282828] border border-white/5">
-                  {coverUrl ? (
-                    <img
-                      src={coverUrl}
-                      alt={currentSong.title}
-                      className="w-full h-full object-cover"
-                      draggable={false}
-                    />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center text-6xl text-white/20">♪</div>
-                  )}
-                </div>
-              </motion.div>
-            </div>
-
-            {/* 3. TRACK INFO & CONTROLS */}
-            <div className="shrink-0 flex flex-col mt-6">
-
-              {/* Title & More Button Row */}
-              <div className="flex items-center justify-between mb-6 px-1">
-                <div className="flex flex-col text-left overflow-hidden mr-4">
-                  <h2 className="text-[22px] font-bold text-white truncate leading-tight tracking-tight mb-1">
-                    {currentSong.title}
-                  </h2>
-                  <p className="text-[18px] text-white/60 truncate font-medium">
-                    {currentSong.artist}
-                  </p>
-                </div>
-
-                {/* LIKE & DOWNLOAD BUTTONS */}
-                <div className="flex flex-row items-center justify-end gap-1">
-                  {!downloadedStatus ? (
-                    <button
-                      onClick={() => currentSong && downloadSong(currentSong)}
-                      disabled={downloadingStatus}
-                      className={cn("p-2 transition-transform active:scale-90", downloadingStatus ? "text-[#3b82f6]" : "text-white/50 hover:text-white")}
-                    >
-                      {downloadingStatus ? <Loader2 className="h-6 w-6 animate-spin" /> : <Download className="h-6 w-6" />}
-                    </button>
-                  ) : (
-                    <button 
-                      onClick={() => currentSong && removeSong(currentSong.id)}
-                      className="p-2 text-[#3b82f6] transition-transform hover:scale-105 active:scale-95"
-                    >
-                      <CheckCircle2 className="h-6 w-6" />
-                    </button>
-                  )}
-
-                  <button
-                    onClick={toggleLike}
-                    className="p-2 transition-transform active:scale-90"
-                  >
-                    <Heart
-                      className={cn(
-                        "h-7 w-7 transition-colors drop-shadow-md",
-                        liked ? "fill-white text-white" : "text-white/50 hover:text-white"
-                      )}
-                    />
-                  </button>
-                </div>
-              </div>
-
-              {/* Progress - White Bar */}
-              <div className="mb-6 relative z-30">
-                <div
-                  className="relative group touch-none"
-                  onPointerDown={(e) => e.stopPropagation()}
-                >
-                  <Slider
-                    defaultValue={[0]}
-                    value={[isDragging ? localProgress : progress]}
-                    max={duration || 100}
-                    step={1}
-                    onValueChange={handleSeek}
-                    onValueCommit={handleSeekCommit}
-                    className="cursor-pointer h-5 flex items-center"
-                    color="#ffffff"
-                  />
-                </div>
-                <div className="flex justify-between text-[11px] font-medium text-white/40 mt-1 tabular-nums font-mono">
-                  <span>{formatTime(isDragging ? localProgress : progress)}</span>
-                  <span>-{formatTime((duration || 0) - (isDragging ? localProgress : progress))}</span>
-                </div>
-              </div>
-
-              {/* Main Controls - Shuffle, Prev, Play, Next, Repeat */}
-              <div className="flex items-center justify-between mb-8 px-2">
-                <button
-                  onClick={toggleShuffle}
-                  className={cn(
-                    "p-2 transition-all active:scale-90",
-                    shuffle
-                      ? "text-white"
-                      : "text-white/30"
-                  )}
-                  style={shuffle ? { filter: `drop-shadow(0 0 8px ${uiColor})` } : undefined}
-                >
-                  <Shuffle className="h-6 w-6" />
-                </button>
-
-                <button
-                  onClick={prev}
-                  className="text-white/90 hover:text-white active:scale-90 transition-transform"
-                >
-                  <SkipBack className="h-10 w-10 fill-current" />
-                </button>
-
-                <button
-                  onClick={togglePlay}
-                  className="w-[72px] h-[72px] rounded-full flex items-center justify-center text-white active:scale-95 transition-transform"
-                >
-                  {isPlaying ? (
-                    <Pause className="h-[72px] w-[72px] fill-current" />
-                  ) : (
-                    <Play className="h-[72px] w-[72px] fill-current" />
-                  )}
-                </button>
-
-                <button
-                  onClick={next}
-                  className="text-white/90 hover:text-white active:scale-90 transition-transform"
-                >
-                  <SkipForward className="h-10 w-10 fill-current" />
-                </button>
-
-                <button
-                  onClick={toggleRepeat}
-                  className={cn(
-                    "p-2 transition-all active:scale-90",
-                    repeat !== 'off'
-                      ? "text-white"
-                      : "text-white/30"
-                  )}
-                  style={repeat !== 'off' ? { filter: `drop-shadow(0 0 8px ${uiColor})` } : undefined}
-                >
-                  {repeat === 'one' ? (
-                    <Repeat1 className="h-6 w-6" />
-                  ) : (
-                    <Repeat className="h-6 w-6" />
-                  )}
-                </button>
-              </div>
-
-              {/* Segment Looper Dropdown Control */}
-              <div className="mb-4">
-                 <button 
-                   onClick={() => setShowLoopControls(!showLoopControls)}
-                   className={cn(
-                     "mx-auto flex items-center justify-center gap-2 px-4 py-1.5 rounded-full text-xs font-semibold backdrop-blur-md transition-colors",
-                     showLoopControls || loopSegmentEnabled 
-                       ? "bg-white/20 text-white border border-white/10" 
-                       : "bg-transparent text-white/40 hover:text-white/80"
-                   )}
-                 >
-                   <ListRestart className="w-4 h-4" /> 
-                   {loopSegmentEnabled ? `Looping: ${formatTime(loopStartTime)} - ${formatTime(loopEndTime)}` : "Segment Looper"}
-                 </button>
-                 
-                 <AnimatePresence>
-                   {showLoopControls && (
-                     <motion.div 
-                       initial={{ opacity: 0, height: 0 }} 
-                       animate={{ opacity: 1, height: 'auto' }}
-                       exit={{ opacity: 0, height: 0 }}
-                       className="mt-4 px-2 overflow-hidden flex flex-col gap-4 bg-white/5 rounded-xl p-4 border border-white/5"
-                     >
-                       <div className="flex items-center justify-between">
-                         <span className="text-xs text-white/50 uppercase tracking-widest pl-1">Start Time</span>
-                         <span className="text-sm font-mono font-medium text-white">{formatTime(isLoopStartDragging ? localLoopStart : loopStartTime)}</span>
-                       </div>
-                       <Slider
-                         value={[isLoopStartDragging ? localLoopStart : loopStartTime]}
-                         max={duration || 100}
-                         step={0.1}
-                         onValueChange={([v]) => {
-                             setIsLoopStartDragging(true);
-                             setLocalLoopStart(v);
-                             if (v >= (isLoopEndDragging ? localLoopEnd : loopEndTime) && (isLoopEndDragging ? localLoopEnd : loopEndTime) !== 0) {
-                                 setLocalLoopEnd(v + 1);
-                             }
-                         }}
-                         onValueCommit={([v]) => {
-                             setIsLoopStartDragging(false);
-                             setLoopStartTime(v);
-                         }}
-                         color="#3b82f6"
-                       />
-                       
-                       <div className="flex items-center justify-between mt-2">
-                         <span className="text-xs text-white/50 uppercase tracking-widest pl-1">End Time</span>
-                         <span className="text-sm font-mono font-medium text-white">{formatTime(isLoopEndDragging ? localLoopEnd : loopEndTime)}</span>
-                       </div>
-                       <Slider
-                         value={[isLoopEndDragging ? localLoopEnd : loopEndTime]}
-                         max={duration || 100}
-                         step={0.1}
-                         onValueChange={([v]) => {
-                             setIsLoopEndDragging(true);
-                             setLocalLoopEnd(v);
-                         }}
-                         onValueCommit={([v]) => {
-                             setIsLoopEndDragging(false);
-                             setLoopEndTime(v <= loopStartTime ? loopStartTime + 1 : v);
-                         }}
-                         color="#ef4444"
-                       />
-
-                       <button
-                         onClick={() => setLoopSegmentEnabled(!loopSegmentEnabled)}
-                         className={cn(
-                           "mt-4 py-2 rounded-lg text-sm font-bold w-full transition-all",
-                           loopSegmentEnabled ? "bg-[#3b82f6] text-white" : "bg-white/10 text-white/60 hover:bg-white/20"
-                         )}
-                       >
-                         {loopSegmentEnabled ? 'Segment Loop ACTIVE' : 'Enable Segment Looping'}
-                       </button>
-                     </motion.div>
-                   )}
-                 </AnimatePresence>
-              </div>
-
-              {/* Volume Slider REMOVED */}
-
-              {/* Bottom Actions: Lyrics, Airplay, List */}
-              <div className="flex justify-center pt-4">
-                <div
-                  className="
-                flex items-center justify-between gap-6
-                px-6 py-3
-                rounded-2xl
-                bg-white/5 backdrop-blur-2xl
-                border border-white/10
-                shadow-[0_8px_30px_rgba(0,0,0,0.3)]
-              "
-                >
-                  <button
-                    onClick={() => setShowLyrics(!showLyrics)}
-                    className={cn(
-                      "p-3 rounded-xl transition-colors",
-                      showLyrics
-                        ? "bg-white/20 text-white"
-                        : "text-white/50 hover:text-white"
-                    )}
-                  >
-                    <Mic2 className="h-6 w-6" />
-                  </button>
-
-                  <button
-                    onClick={handleShare}
-                    className="p-3 text-white/50 hover:text-white transition-colors"
-                  >
-                    <Share2 className="h-6 w-6" />
-                  </button>
-
-                  <button
-                    onClick={handleCast}
-                    className="p-3 text-white/50 hover:text-white transition-colors"
-                  >
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      width="24"
-                      height="24"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      className="h-6 w-6"
-                    >
-                      <path d="M2 16.1A5 5 0 0 1 5.9 20M2 12.05A9 9 0 0 1 9.95 20M2 8V6a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-6" />
-                      <line x1="2" x2="2.01" y1="20" y2="20" />
-                    </svg>
-                  </button>
-
-                  <button
-                    onClick={() => {
-                      setShowDashboard(!showDashboard);
-                      if (!showDashboard) setShowLyrics(false);
-                    }}
-                    className={cn(
-                      "p-3 rounded-xl transition-colors",
-                      showDashboard
-                        ? "bg-white/20 text-white"
-                        : "text-white/50 hover:text-white"
-                    )}
-                  >
-                    <ListMusic className="h-6 w-6" />
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </motion.div >
-      )
-      }
-    </AnimatePresence >
-  )
 
   return (
     <>
@@ -1039,17 +568,79 @@ const ExpandedPlayerComponent = memo(({
     loopStartTime, loopEndTime, loopSegmentEnabled,
     setLoopStartTime, setLoopEndTime, setLoopSegmentEnabled
   } = usePlayerStore()
-  
+
   const [isLoopStartDragging, setIsLoopStartDragging] = useState(false)
   const [isLoopEndDragging, setIsLoopEndDragging] = useState(false)
   const [localLoopStart, setLocalLoopStart] = useState(0)
   const [localLoopEnd, setLocalLoopEnd] = useState(0)
-  const [showLoopControls, setShowLoopControls] = useState(false)
+  const [initialLoopStart, setInitialLoopStart] = useState(0)
+  const [initialLoopEnd, setInitialLoopEnd] = useState(0)
+  const progressBarRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
     if (!isLoopStartDragging) setLocalLoopStart(loopStartTime);
     if (!isLoopEndDragging) setLocalLoopEnd(loopEndTime);
   }, [loopStartTime, loopEndTime, isLoopStartDragging, isLoopEndDragging]);
+
+  const startLoopDrag = (event: React.PointerEvent<HTMLDivElement>, handle: 'start' | 'end') => {
+    event.preventDefault();
+    event.stopPropagation();
+
+    const originalStart = loopStartTime;
+    const originalEnd = loopEndTime;
+    const isStart = handle === 'start';
+
+    if (isStart) {
+      setIsLoopStartDragging(true);
+      setInitialLoopStart(loopStartTime);
+    } else {
+      setIsLoopEndDragging(true);
+      setInitialLoopEnd(loopEndTime);
+    }
+
+    let frameId: number;
+    let lastPercentage = -1;
+
+    const onPointerMove = (moveEvent: PointerEvent) => {
+      if (!progressBarRef.current || duration === undefined) return;
+      const rect = progressBarRef.current.getBoundingClientRect();
+      const percentage = Math.max(0, Math.min(1, (moveEvent.clientX - rect.left) / rect.width));
+
+      if (percentage === lastPercentage) return;
+      lastPercentage = percentage;
+
+      if (frameId) cancelAnimationFrame(frameId);
+      frameId = requestAnimationFrame(() => {
+        const rawTime = percentage * duration;
+        const snapped = Math.round(rawTime * 10) / 10;
+
+        if (isStart) {
+          const clampedStart = Math.min(Math.max(0, snapped), Math.max(0, originalEnd - 0.5));
+          setLocalLoopStart(clampedStart);
+          setLoopStartTime(clampedStart);
+          // Immediate audio jump for start handle
+          handleSeekCommit([clampedStart]);
+        } else {
+          const clampedEnd = Math.min(Math.max(originalStart + 0.5, snapped), duration);
+          setLocalLoopEnd(clampedEnd);
+          setLoopEndTime(clampedEnd);
+        }
+      });
+    };
+
+    const onPointerUp = () => {
+      if (frameId) cancelAnimationFrame(frameId);
+      window.removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener('pointerup', onPointerUp);
+
+      if (isStart) setIsLoopStartDragging(false);
+      else setIsLoopEndDragging(false);
+    };
+
+    window.addEventListener('pointermove', onPointerMove);
+    window.addEventListener('pointerup', onPointerUp);
+  };
+
 
   return (
     <AnimatePresence>
@@ -1180,12 +771,16 @@ const ExpandedPlayerComponent = memo(({
           <div className="relative z-20 flex flex-col h-full w-full px-6 pb-12">
 
             {/* 1. TOP BAR - Drag Handle Only */}
-            <div className="flex items-center justify-center h-8 shrink-0 w-full mt-4 mb-4">
+            <div className={cn("flex items-center justify-center h-8 shrink-0 w-full mt-4 mb-4 transition-all duration-300", 
+              (isLoopStartDragging || isLoopEndDragging) && "blur-sm opacity-50 pointer-events-none"
+            )}>
               <div className="w-10 h-1 rounded-full bg-white/20" />
             </div>
 
             {/* 2. ARTWORK */}
-            <div className="flex-1 flex items-center justify-center min-h-0 py-4 relative">
+            <div className={cn("flex-1 flex items-center justify-center min-h-0 py-4 relative transition-all duration-300",
+              (isLoopStartDragging || isLoopEndDragging) && "blur-md opacity-40 pointer-events-none"
+            )}>
               <motion.div
                 className="relative aspect-square w-full max-w-[340px] rounded-[18px] z-10"
                 style={{
@@ -1218,7 +813,9 @@ const ExpandedPlayerComponent = memo(({
             <div className="shrink-0 flex flex-col mt-6">
 
               {/* Title & More Button Row */}
-              <div className="flex items-center justify-between mb-6 px-1">
+              <div className={cn("flex items-center justify-between mb-6 px-1 transition-all duration-300",
+                (isLoopStartDragging || isLoopEndDragging) && "blur-sm opacity-50 pointer-events-none"
+              )}>
                 <div className="flex flex-col text-left overflow-hidden mr-4">
                   <h2 className="text-[22px] font-bold text-white truncate leading-tight tracking-tight mb-1">
                     {currentSong.title}
@@ -1239,7 +836,7 @@ const ExpandedPlayerComponent = memo(({
                       {downloadingStatus ? <Loader2 className="h-6 w-6 animate-spin" /> : <Download className="h-6 w-6" />}
                     </button>
                   ) : (
-                    <button 
+                    <button
                       onClick={() => currentSong && removeSong(currentSong.id)}
                       className="p-2 text-[#3b82f6] transition-transform hover:scale-105 active:scale-95"
                     >
@@ -1261,12 +858,114 @@ const ExpandedPlayerComponent = memo(({
                 </div>
               </div>
 
-              {/* Progress - White Bar */}
-              <div className="mb-6 relative z-30">
+              {/* Progress - White Bar & Loop Track */}
+              <div className="mb-8 mt-2 relative z-30">
                 <div
-                  className="relative group touch-none"
+                  ref={progressBarRef}
+                  className="relative h-10 flex flex-col justify-center group touch-none"
                   onPointerDown={(e) => e.stopPropagation()}
                 >
+                  {loopSegmentEnabled && duration && (
+                    <>
+                      {/* Loop Range Highlight */}
+                      <div
+                        className="absolute top-1/2 h-2 rounded-full bg-white/10 -translate-y-1/2 transition-all pointer-events-none"
+                        style={{
+                          left: `${(loopStartTime / duration) * 100}%`,
+                          width: `${((loopEndTime - loopStartTime) / duration) * 100}%`
+                        }}
+                      />
+
+                      {/* Start Handle Wrapper */}
+                      <div
+                        className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 z-40 flex flex-col items-center justify-center pointer-events-none"
+                        style={{ left: `${(isLoopStartDragging ? localLoopStart : loopStartTime) / duration * 100}%` }}
+                      >
+                        {/* Label */}
+                        <div className={cn(
+                          "absolute bottom-[calc(100%+4px)] text-[8px] font-bold tracking-[0.2em] text-white/40 transition-opacity",
+                          isLoopStartDragging ? "opacity-0" : "opacity-100"
+                        )}>
+                          START
+                        </div>
+
+                        {/* Interactive Handle */}
+                        <motion.div
+                          className="cursor-ew-resize group/handle p-3 flex items-center justify-center pointer-events-auto"
+                          onPointerDown={(e) => startLoopDrag(e, 'start')}
+                          whileHover={{ scale: 1.2 }}
+                          whileDrag={{ scale: 1.4 }}
+                        >
+                          <div className={cn(
+                            "w-3 h-3 bg-blue-400 rounded-full transition-shadow shadow-[0_0_8px_rgba(96,165,250,0.6)] border border-white/20",
+                            isLoopStartDragging && "brightness-125 shadow-[0_0_12px_rgba(96,165,250,0.8)] border-white/40"
+                          )} />
+                        </motion.div>
+
+                        {/* Tooltip */}
+                        <AnimatePresence>
+                          {isLoopStartDragging && (
+                            <motion.div
+                              initial={{ opacity: 0, scale: 0.8, y: -20 }}
+                              animate={{ opacity: 1, scale: 1, y: -35 }}
+                              exit={{ opacity: 0, scale: 0.8, y: -20 }}
+                              className="absolute left-1/2 -translate-x-1/2 bg-black/80 backdrop-blur-md text-white text-[10px] px-2 py-1 rounded-md border border-white/20 whitespace-nowrap font-mono shadow-xl flex flex-col items-center pointer-events-none"
+                            >
+                              <span>{formatTime(localLoopStart)}</span>
+                              <span className="text-[9px] opacity-60">
+                                {localLoopStart - initialLoopStart >= 0 ? '+' : ''}{(localLoopStart - initialLoopStart).toFixed(1)}s
+                              </span>
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
+                      </div>
+
+                      {/* End Handle Wrapper */}
+                      <div
+                        className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 z-40 flex flex-col items-center justify-center pointer-events-none"
+                        style={{ left: `${(isLoopEndDragging ? localLoopEnd : loopEndTime) / duration * 100}%` }}
+                      >
+                        {/* Label */}
+                        <div className={cn(
+                          "absolute bottom-[calc(100%+4px)] text-[8px] font-bold tracking-[0.2em] text-white/40 transition-opacity",
+                          isLoopEndDragging ? "opacity-0" : "opacity-100"
+                        )}>
+                          END
+                        </div>
+
+                        {/* Interactive Handle */}
+                        <motion.div
+                          className="cursor-ew-resize group/handle p-3 flex items-center justify-center pointer-events-auto"
+                          onPointerDown={(e) => startLoopDrag(e, 'end')}
+                          whileHover={{ scale: 1.2 }}
+                          whileDrag={{ scale: 1.4 }}
+                        >
+                          <div className={cn(
+                            "w-3 h-3 bg-red-400 rounded-full transition-shadow shadow-[0_0_8px_rgba(248,113,113,0.6)] border border-white/20",
+                            isLoopEndDragging && "brightness-125 shadow-[0_0_12px_rgba(248,113,113,0.8)] border-white/40"
+                          )} />
+                        </motion.div>
+
+                        {/* Tooltip */}
+                        <AnimatePresence>
+                          {isLoopEndDragging && (
+                            <motion.div
+                              initial={{ opacity: 0, scale: 0.8, y: -20 }}
+                              animate={{ opacity: 1, scale: 1, y: -35 }}
+                              exit={{ opacity: 0, scale: 0.8, y: -20 }}
+                              className="absolute left-1/2 -translate-x-1/2 bg-black/80 backdrop-blur-md text-white text-[10px] px-2 py-1 rounded-md border border-white/20 whitespace-nowrap font-mono shadow-xl flex flex-col items-center pointer-events-none"
+                            >
+                              <span>{formatTime(localLoopEnd)}</span>
+                              <span className="text-[9px] opacity-60">
+                                {localLoopEnd - initialLoopEnd >= 0 ? '+' : ''}{(localLoopEnd - initialLoopEnd).toFixed(1)}s
+                              </span>
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
+                      </div>
+                    </>
+                  )}
+
                   <Slider
                     defaultValue={[0]}
                     value={[isDragging ? localProgress : progress]}
@@ -1274,7 +973,7 @@ const ExpandedPlayerComponent = memo(({
                     step={1}
                     onValueChange={handleSeek}
                     onValueCommit={handleSeekCommit}
-                    className="cursor-pointer h-5 flex items-center"
+                    className="cursor-pointer h-3 flex items-center relative z-20"
                     color="#ffffff"
                   />
                 </div>
@@ -1285,7 +984,9 @@ const ExpandedPlayerComponent = memo(({
               </div>
 
               {/* Main Controls - Shuffle, Prev, Play, Next, Repeat */}
-              <div className="flex items-center justify-between mb-8 px-2">
+              <div className={cn("flex items-center justify-between mb-8 px-2 transition-all duration-300",
+                (isLoopStartDragging || isLoopEndDragging) && "blur-sm opacity-50 pointer-events-none"
+              )}>
                 <button
                   onClick={toggleShuffle}
                   className={cn(
@@ -1342,86 +1043,35 @@ const ExpandedPlayerComponent = memo(({
                 </button>
               </div>
 
-              {/* Segment Looper Dropdown Control */}
-              <div className="mb-4">
-                 <button 
-                   onClick={() => setShowLoopControls(!showLoopControls)}
-                   className={cn(
-                     "mx-auto flex items-center justify-center gap-2 px-4 py-1.5 rounded-full text-xs font-semibold backdrop-blur-md transition-colors",
-                     showLoopControls || loopSegmentEnabled 
-                       ? "bg-white/20 text-white border border-white/10" 
-                       : "bg-transparent text-white/40 hover:text-white/80"
-                   )}
-                 >
-                   <ListRestart className="w-4 h-4" /> 
-                   {loopSegmentEnabled ? `Looping: ${formatTime(loopStartTime)} - ${formatTime(loopEndTime === 0 ? (duration || 0) : loopEndTime)}` : "Segment Looper"}
-                 </button>
-                 
-                 <AnimatePresence>
-                   {showLoopControls && (
-                     <motion.div 
-                       initial={{ opacity: 0, height: 0 }} 
-                       animate={{ opacity: 1, height: 'auto' }}
-                       exit={{ opacity: 0, height: 0 }}
-                       className="mt-4 px-2 overflow-hidden flex flex-col gap-4 bg-white/5 rounded-xl p-4 border border-white/5"
-                     >
-                       <div className="flex items-center justify-between">
-                         <span className="text-xs text-white/50 uppercase tracking-widest pl-1">Start Time</span>
-                         <span className="text-sm font-mono font-medium text-white">{formatTime(isLoopStartDragging ? localLoopStart : loopStartTime)}</span>
-                       </div>
-                       <Slider
-                         value={[isLoopStartDragging ? localLoopStart : loopStartTime]}
-                         max={duration || 100}
-                         step={0.1}
-                         onValueChange={([v]) => {
-                             setIsLoopStartDragging(true);
-                             setLocalLoopStart(v);
-                             if (v >= (isLoopEndDragging ? localLoopEnd : loopEndTime) && (isLoopEndDragging ? localLoopEnd : loopEndTime) !== 0) {
-                                 setLocalLoopEnd(v + 1);
-                             }
-                         }}
-                         onValueCommit={([v]) => {
-                             setIsLoopStartDragging(false);
-                             setLoopStartTime(v);
-                         }}
-                         color="#3b82f6"
-                       />
-                       
-                       <div className="flex items-center justify-between mt-2">
-                         <span className="text-xs text-white/50 uppercase tracking-widest pl-1">End Time</span>
-                         <span className="text-sm font-mono font-medium text-white">{formatTime(isLoopEndDragging ? localLoopEnd : (loopEndTime === 0 ? (duration || 0) : loopEndTime))}</span>
-                       </div>
-                       <Slider
-                         value={[isLoopEndDragging ? localLoopEnd : (loopEndTime === 0 ? (duration || 0) : loopEndTime)]}
-                         max={duration || 100}
-                         step={0.1}
-                         onValueChange={([v]) => {
-                             setIsLoopEndDragging(true);
-                             setLocalLoopEnd(v);
-                         }}
-                         onValueCommit={([v]) => {
-                             setIsLoopEndDragging(false);
-                             setLoopEndTime(v <= loopStartTime ? loopStartTime + 1 : v);
-                         }}
-                         color="#ef4444"
-                       />
+              <div className={cn("mb-4 space-y-3 transition-all duration-300",
+                (isLoopStartDragging || isLoopEndDragging) && "blur-sm opacity-50 pointer-events-none"
+              )}>
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <button
+                    onClick={() => setLoopSegmentEnabled(!loopSegmentEnabled)}
+                    className={cn(
+                      "inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-xs font-semibold transition-colors",
+                      loopSegmentEnabled
+                        ? "bg-white/15 text-white border border-white/10"
+                        : "bg-white/5 text-white/70 hover:text-white"
+                    )}
+                  >
+                    <ListRestart className="w-4 h-4" />
+                    {loopSegmentEnabled ? 'Loop ON' : 'Loop OFF'}
+                  </button>
 
-                       <button
-                         onClick={() => setLoopSegmentEnabled(!loopSegmentEnabled)}
-                         className={cn(
-                           "mt-4 py-2 rounded-lg text-sm font-bold w-full transition-all",
-                           loopSegmentEnabled ? "bg-[#3b82f6] text-white" : "bg-white/10 text-white/60 hover:bg-white/20"
-                         )}
-                       >
-                         {loopSegmentEnabled ? 'Segment Loop ACTIVE' : 'Enable Segment Looping'}
-                       </button>
-                     </motion.div>
-                   )}
-                 </AnimatePresence>
+                  <div className="text-sm text-white/60 font-medium tabular-nums">
+                    {loopSegmentEnabled
+                      ? `${formatTime(loopStartTime)} → ${formatTime(loopEndTime)}`
+                      : 'Loop range disabled'}
+                  </div>
+                </div>
               </div>
 
               {/* Bottom Actions: Lyrics, Airplay, List */}
-              <div className="flex justify-center pt-4">
+              <div className={cn("flex justify-center pt-4 transition-all duration-300",
+                (isLoopStartDragging || isLoopEndDragging) && "blur-sm opacity-50 pointer-events-none"
+              )}>
                 <div
                   className="
                 flex items-center justify-between gap-6

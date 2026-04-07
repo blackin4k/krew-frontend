@@ -1030,6 +1030,27 @@ const ExpandedPlayerComponent = memo(({
   showVisualizer, handleSeek, handleSeekCommit, isDragging, localProgress,
   handleShare, handleCast, expanded, setExpanded, liked, toggleLike, lyrics
 }: any) => {
+
+  const { downloadSong, removeSong, downloadedSongs, isDownloading } = useOfflineStore()
+  const downloadedStatus = currentSong ? downloadedSongs.some(s => s.id === currentSong.id) : false;
+  const downloadingStatus = currentSong ? isDownloading[currentSong.id] : false;
+
+  const {
+    loopStartTime, loopEndTime, loopSegmentEnabled,
+    setLoopStartTime, setLoopEndTime, setLoopSegmentEnabled
+  } = usePlayerStore()
+  
+  const [isLoopStartDragging, setIsLoopStartDragging] = useState(false)
+  const [isLoopEndDragging, setIsLoopEndDragging] = useState(false)
+  const [localLoopStart, setLocalLoopStart] = useState(0)
+  const [localLoopEnd, setLocalLoopEnd] = useState(0)
+  const [showLoopControls, setShowLoopControls] = useState(false)
+
+  useEffect(() => {
+    if (!isLoopStartDragging) setLocalLoopStart(loopStartTime);
+    if (!isLoopEndDragging) setLocalLoopEnd(loopEndTime);
+  }, [loopStartTime, loopEndTime, isLoopStartDragging, isLoopEndDragging]);
+
   return (
     <AnimatePresence>
       {expanded && (
@@ -1207,18 +1228,37 @@ const ExpandedPlayerComponent = memo(({
                   </p>
                 </div>
 
-                {/* LIKE BUTTON FIX */}
-                <button
-                  onClick={toggleLike}
-                  className="p-2 transition-transform active:scale-90"
-                >
-                  <Heart
-                    className={cn(
-                      "h-7 w-7 transition-colors drop-shadow-md",
-                      liked ? "fill-white text-white" : "text-white/50 hover:text-white"
-                    )}
-                  />
-                </button>
+                {/* LIKE & DOWNLOAD BUTTONS */}
+                <div className="flex flex-row items-center justify-end gap-1">
+                  {!downloadedStatus ? (
+                    <button
+                      onClick={() => currentSong && downloadSong(currentSong)}
+                      disabled={downloadingStatus}
+                      className={cn("p-2 transition-transform active:scale-90", downloadingStatus ? "text-[#3b82f6]" : "text-white/50 hover:text-white")}
+                    >
+                      {downloadingStatus ? <Loader2 className="h-6 w-6 animate-spin" /> : <Download className="h-6 w-6" />}
+                    </button>
+                  ) : (
+                    <button 
+                      onClick={() => currentSong && removeSong(currentSong.id)}
+                      className="p-2 text-[#3b82f6] transition-transform hover:scale-105 active:scale-95"
+                    >
+                      <CheckCircle2 className="h-6 w-6" />
+                    </button>
+                  )}
+
+                  <button
+                    onClick={toggleLike}
+                    className="p-2 transition-transform active:scale-90"
+                  >
+                    <Heart
+                      className={cn(
+                        "h-7 w-7 transition-colors drop-shadow-md",
+                        liked ? "fill-white text-white" : "text-white/50 hover:text-white"
+                      )}
+                    />
+                  </button>
+                </div>
               </div>
 
               {/* Progress - White Bar */}
@@ -1300,6 +1340,84 @@ const ExpandedPlayerComponent = memo(({
                     <Repeat className="h-6 w-6" />
                   )}
                 </button>
+              </div>
+
+              {/* Segment Looper Dropdown Control */}
+              <div className="mb-4">
+                 <button 
+                   onClick={() => setShowLoopControls(!showLoopControls)}
+                   className={cn(
+                     "mx-auto flex items-center justify-center gap-2 px-4 py-1.5 rounded-full text-xs font-semibold backdrop-blur-md transition-colors",
+                     showLoopControls || loopSegmentEnabled 
+                       ? "bg-white/20 text-white border border-white/10" 
+                       : "bg-transparent text-white/40 hover:text-white/80"
+                   )}
+                 >
+                   <ListRestart className="w-4 h-4" /> 
+                   {loopSegmentEnabled ? `Looping: ${formatTime(loopStartTime)} - ${formatTime(loopEndTime === 0 ? (duration || 0) : loopEndTime)}` : "Segment Looper"}
+                 </button>
+                 
+                 <AnimatePresence>
+                   {showLoopControls && (
+                     <motion.div 
+                       initial={{ opacity: 0, height: 0 }} 
+                       animate={{ opacity: 1, height: 'auto' }}
+                       exit={{ opacity: 0, height: 0 }}
+                       className="mt-4 px-2 overflow-hidden flex flex-col gap-4 bg-white/5 rounded-xl p-4 border border-white/5"
+                     >
+                       <div className="flex items-center justify-between">
+                         <span className="text-xs text-white/50 uppercase tracking-widest pl-1">Start Time</span>
+                         <span className="text-sm font-mono font-medium text-white">{formatTime(isLoopStartDragging ? localLoopStart : loopStartTime)}</span>
+                       </div>
+                       <Slider
+                         value={[isLoopStartDragging ? localLoopStart : loopStartTime]}
+                         max={duration || 100}
+                         step={0.1}
+                         onValueChange={([v]) => {
+                             setIsLoopStartDragging(true);
+                             setLocalLoopStart(v);
+                             if (v >= (isLoopEndDragging ? localLoopEnd : loopEndTime) && (isLoopEndDragging ? localLoopEnd : loopEndTime) !== 0) {
+                                 setLocalLoopEnd(v + 1);
+                             }
+                         }}
+                         onValueCommit={([v]) => {
+                             setIsLoopStartDragging(false);
+                             setLoopStartTime(v);
+                         }}
+                         color="#3b82f6"
+                       />
+                       
+                       <div className="flex items-center justify-between mt-2">
+                         <span className="text-xs text-white/50 uppercase tracking-widest pl-1">End Time</span>
+                         <span className="text-sm font-mono font-medium text-white">{formatTime(isLoopEndDragging ? localLoopEnd : (loopEndTime === 0 ? (duration || 0) : loopEndTime))}</span>
+                       </div>
+                       <Slider
+                         value={[isLoopEndDragging ? localLoopEnd : (loopEndTime === 0 ? (duration || 0) : loopEndTime)]}
+                         max={duration || 100}
+                         step={0.1}
+                         onValueChange={([v]) => {
+                             setIsLoopEndDragging(true);
+                             setLocalLoopEnd(v);
+                         }}
+                         onValueCommit={([v]) => {
+                             setIsLoopEndDragging(false);
+                             setLoopEndTime(v <= loopStartTime ? loopStartTime + 1 : v);
+                         }}
+                         color="#ef4444"
+                       />
+
+                       <button
+                         onClick={() => setLoopSegmentEnabled(!loopSegmentEnabled)}
+                         className={cn(
+                           "mt-4 py-2 rounded-lg text-sm font-bold w-full transition-all",
+                           loopSegmentEnabled ? "bg-[#3b82f6] text-white" : "bg-white/10 text-white/60 hover:bg-white/20"
+                         )}
+                       >
+                         {loopSegmentEnabled ? 'Segment Loop ACTIVE' : 'Enable Segment Looping'}
+                       </button>
+                     </motion.div>
+                   )}
+                 </AnimatePresence>
               </div>
 
               {/* Bottom Actions: Lyrics, Airplay, List */}

@@ -560,7 +560,8 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
               const duration = Math.max(0, audio.duration || 0);
 
               // Advanced Segment Looping Mechanism
-              if (state.loopSegmentEnabled && state.loopEndTime > 0 && audio.currentTime >= state.loopEndTime) {
+              const activeLoopEnd = state.loopEndTime === 0 ? duration : state.loopEndTime;
+              if (state.loopSegmentEnabled && activeLoopEnd > 0 && audio.currentTime >= activeLoopEnd) {
                   audio.currentTime = state.loopStartTime;
                   if (!audio.paused) audio.play();
               }
@@ -568,7 +569,8 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
               set({ progress: audio.currentTime, duration });
 
               const timeLeft = duration - audio.currentTime;
-              if (timeLeft > 0 && timeLeft <= state.crossfadeDuration && !state._isCrossfading && state.queue.length > 0) {
+              // Disable crossfader if segment looping is active, to prevent breaking the loop
+              if (!state.loopSegmentEnabled && timeLeft > 0 && timeLeft <= state.crossfadeDuration && !state._isCrossfading && state.queue.length > 0) {
                 get()._handleCrossfadeAuto();
               }
             }

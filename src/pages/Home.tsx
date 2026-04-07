@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { Play, Sparkles } from 'lucide-react';
+import { Play, Sparkles, Download, Check, Loader2 } from 'lucide-react';
 import { songsApi, libraryApi, radioApi } from '@/lib/api';
 import { Song } from '@/types/music';
 import { usePlayerStore } from '@/stores/playerStore';
 import { useAuthStore } from '@/stores/authStore';
+import { useOfflineStore } from '@/stores/offlineStore';
 import StreakCard from '@/components/StreakCard';
 
 const HOME_CACHE_KEY = 'krew_home_feed_cache_v1';
@@ -44,7 +45,12 @@ function saveHomeCache(cache: HomeFeedCache) {
   }
 }
 
-const SmallSongCard = React.memo(({ song, onClick }: { song: Song; onClick: () => void }) => (
+const SmallSongCard = React.memo(({ song, onClick }: { song: Song; onClick: () => void }) => {
+  const { downloadSong, removeSong, downloadedSongs, isDownloading } = useOfflineStore();
+  const downloaded = downloadedSongs.some((s: any) => s.id === song.id);
+  const downloading = isDownloading[song.id];
+
+  return (
   <div 
     className="min-w-[100px] max-w-[100px] flex flex-col gap-2 cursor-pointer group hover:scale-[1.03] transition-transform active:scale-95" 
     onClick={onClick}
@@ -61,12 +67,27 @@ const SmallSongCard = React.memo(({ song, onClick }: { song: Song; onClick: () =
       <div className="absolute inset-0 bg-black/20 hidden group-hover:flex items-center justify-center transition-all bg-gradient-to-t from-black/60 to-transparent">
         <Play className="fill-white text-white w-8 h-8 opacity-90 drop-shadow-md" />
       </div>
+      <button 
+        onClick={(e) => { e.stopPropagation(); downloaded ? removeSong(song.id) : downloadSong(song) }}
+        disabled={downloading}
+        className="absolute top-2 right-2 p-1 bg-black/40 backdrop-blur-sm rounded-full text-white/70 hover:text-white z-10 transition-opacity opacity-0 group-hover:opacity-100"
+      >
+        {downloading ? <Loader2 className="w-3 h-3 animate-spin text-[#3b82f6]" /> : 
+         downloaded ? <Check className="w-3 h-3 text-[#3b82f6]" /> : 
+         <Download className="w-3 h-3" />}
+      </button>
+      {downloaded && (
+         <div className="absolute top-2 right-2 p-1 bg-black/40 backdrop-blur-sm rounded-full text-[#3b82f6] z-0 group-hover:hidden">
+            <Check className="w-3 h-3" />
+         </div>
+      )}
     </div>
     <div className="text-[12px] text-[#9CA3AF] truncate font-medium group-hover:text-white transition-colors">{song.title}</div>
   </div>
-));
+)});
 
 const Home = () => {
+  const { downloadSong, removeSong, downloadedSongs, isDownloading } = useOfflineStore();
   const [songs, setSongs] = useState<Song[]>([]);
   const [recommendations, setRecommendations] = useState<Song[]>([]);
   const [recentlyPlayed, setRecentlyPlayed] = useState<Song[]>([]);
@@ -247,7 +268,10 @@ const Home = () => {
     <section key="made-for-you">
       <div className="text-[16px] font-semibold text-white mb-4">Made For You</div>
       <div className="flex overflow-x-auto pb-4 gap-4 -mx-4 px-4 scrollbar-hide">
-        {recommendations.slice(0, 5).map((song) => (
+        {recommendations.slice(0, 5).map((song) => {
+          const downloaded = downloadedSongs.some((s: any) => s.id === song.id);
+          const downloading = isDownloading[song.id];
+          return (
           <div 
             key={`rec-${song.id}`} 
             className="min-w-[160px] max-w-[160px] bg-[#151518] rounded-[22px] p-[14px] flex flex-col cursor-pointer group hover:scale-[1.03] hover:bg-[#1a1a20] transition-all active:scale-95 border border-transparent hover:border-white/10 shadow-sm"
@@ -263,11 +287,25 @@ const Home = () => {
               <div className="absolute inset-0 bg-black/20 hidden group-hover:flex items-center justify-center transition-all">
                 <Play className="fill-white text-white w-10 h-10 opacity-90 drop-shadow-md" />
               </div>
+              <button 
+                onClick={(e) => { e.stopPropagation(); downloaded ? removeSong(song.id) : downloadSong(song) }}
+                disabled={downloading}
+                className="absolute top-2 right-2 p-1.5 bg-black/40 backdrop-blur-sm rounded-full text-white/70 hover:text-white z-10 transition-opacity opacity-0 group-hover:opacity-100"
+              >
+                {downloading ? <Loader2 className="w-3 h-3 animate-spin text-[#3b82f6]" /> : 
+                 downloaded ? <Check className="w-3 h-3 text-[#3b82f6]" /> : 
+                 <Download className="w-3 h-3" />}
+              </button>
+              {downloaded && (
+                 <div className="absolute top-2 right-2 p-1.5 bg-black/40 backdrop-blur-sm rounded-full text-[#3b82f6] z-0 group-hover:hidden">
+                    <Check className="w-3 h-3" />
+                 </div>
+              )}
             </div>
             <div className="text-[14px] font-semibold text-white truncate group-hover:text-[#3b82f6] transition-colors">{song.title}</div>
             <div className="text-[12px] text-[#9CA3AF] truncate">{song.artist}</div>
           </div>
-        ))}
+        )})}
       </div>
     </section>
   ) : null;

@@ -33,7 +33,8 @@ import {
   Share,
   Download,
   CheckCircle2,
-  ListRestart
+  ListRestart,
+  Loader2
 } from "lucide-react"
 
 import { Slider } from "@/components/ui/slider"
@@ -315,7 +316,7 @@ export default function Player() {
     setLoopSegmentEnabled
   } = usePlayerStore()
 
-  const { downloadSong, downloadedSongs, isDownloading } = useOfflineStore()
+  const { downloadSong, removeSong, downloadedSongs, isDownloading } = useOfflineStore()
 
   const [muted, setMuted] = useState(false)
   const [liked, setLiked] = useState(false)
@@ -326,10 +327,16 @@ export default function Player() {
   const [optionsOpen, setOptionsOpen] = useState(false);
   
   // Segment Loop dragging
-  const [isLoopDragging, setIsLoopDragging] = useState(false)
+  const [isLoopStartDragging, setIsLoopStartDragging] = useState(false)
+  const [isLoopEndDragging, setIsLoopEndDragging] = useState(false)
   const [localLoopStart, setLocalLoopStart] = useState(0)
   const [localLoopEnd, setLocalLoopEnd] = useState(0)
   const [showLoopControls, setShowLoopControls] = useState(false)
+
+  useEffect(() => {
+    if (!isLoopStartDragging) setLocalLoopStart(loopStartTime);
+    if (!isLoopEndDragging) setLocalLoopEnd(loopEndTime);
+  }, [loopStartTime, loopEndTime, isLoopStartDragging, isLoopEndDragging]);
 
   // Wait until song data matches to determine status safely
   const downloadedStatus = currentSong ? downloadedSongs.some(s => s.id === currentSong.id) : false;
@@ -665,12 +672,15 @@ export default function Player() {
                     <button
                       onClick={() => currentSong && downloadSong(currentSong)}
                       disabled={downloadingStatus}
-                      className={cn("p-2 transition-transform active:scale-90 text-white/50 hover:text-white", downloadingStatus && "animate-pulse")}
+                      className={cn("p-2 transition-transform active:scale-90", downloadingStatus ? "text-[#3b82f6]" : "text-white/50 hover:text-white")}
                     >
-                      <Download className="h-6 w-6" />
+                      {downloadingStatus ? <Loader2 className="h-6 w-6 animate-spin" /> : <Download className="h-6 w-6" />}
                     </button>
                   ) : (
-                    <button className="p-2 text-[#3b82f6] transition-transform">
+                    <button 
+                      onClick={() => currentSong && removeSong(currentSong.id)}
+                      className="p-2 text-[#3b82f6] transition-transform hover:scale-105 active:scale-95"
+                    >
                       <CheckCircle2 className="h-6 w-6" />
                     </button>
                   )}
@@ -795,21 +805,21 @@ export default function Player() {
                      >
                        <div className="flex items-center justify-between">
                          <span className="text-xs text-white/50 uppercase tracking-widest pl-1">Start Time</span>
-                         <span className="text-sm font-mono font-medium text-white">{formatTime(isLoopDragging ? localLoopStart : loopStartTime)}</span>
+                         <span className="text-sm font-mono font-medium text-white">{formatTime(isLoopStartDragging ? localLoopStart : loopStartTime)}</span>
                        </div>
                        <Slider
-                         value={[isLoopDragging ? localLoopStart : loopStartTime]}
+                         value={[isLoopStartDragging ? localLoopStart : loopStartTime]}
                          max={duration || 100}
                          step={0.1}
                          onValueChange={([v]) => {
-                             setIsLoopDragging(true);
+                             setIsLoopStartDragging(true);
                              setLocalLoopStart(v);
-                             if (v >= (isLoopDragging ? localLoopEnd : loopEndTime) && (isLoopDragging ? localLoopEnd : loopEndTime) !== 0) {
+                             if (v >= (isLoopEndDragging ? localLoopEnd : loopEndTime) && (isLoopEndDragging ? localLoopEnd : loopEndTime) !== 0) {
                                  setLocalLoopEnd(v + 1);
                              }
                          }}
                          onValueCommit={([v]) => {
-                             setIsLoopDragging(false);
+                             setIsLoopStartDragging(false);
                              setLoopStartTime(v);
                          }}
                          color="#3b82f6"
@@ -817,18 +827,18 @@ export default function Player() {
                        
                        <div className="flex items-center justify-between mt-2">
                          <span className="text-xs text-white/50 uppercase tracking-widest pl-1">End Time</span>
-                         <span className="text-sm font-mono font-medium text-white">{formatTime(isLoopDragging ? localLoopEnd : loopEndTime)}</span>
+                         <span className="text-sm font-mono font-medium text-white">{formatTime(isLoopEndDragging ? localLoopEnd : loopEndTime)}</span>
                        </div>
                        <Slider
-                         value={[isLoopDragging ? localLoopEnd : loopEndTime]}
+                         value={[isLoopEndDragging ? localLoopEnd : loopEndTime]}
                          max={duration || 100}
                          step={0.1}
                          onValueChange={([v]) => {
-                             setIsLoopDragging(true);
+                             setIsLoopEndDragging(true);
                              setLocalLoopEnd(v);
                          }}
                          onValueCommit={([v]) => {
-                             setIsLoopDragging(false);
+                             setIsLoopEndDragging(false);
                              setLoopEndTime(v <= loopStartTime ? loopStartTime + 1 : v);
                          }}
                          color="#ef4444"

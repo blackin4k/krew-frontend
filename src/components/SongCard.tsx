@@ -94,6 +94,17 @@ const SongCard = ({ song, index, showIndex, compact, variant = 'grid', onSongAdd
               {song.title}
             </h4>
           </div>
+
+          {/* Download button */}
+          <button 
+             onClick={(e) => { e.stopPropagation(); downloaded ? removeSong(song.id) : downloadSong(song) }}
+             disabled={downloading}
+             className="px-3 text-[#B3B3B3] hover:text-white shrink-0"
+          >
+             {downloading ? <Loader2 className="w-4 h-4 animate-spin text-[#3b82f6]" /> : 
+              downloaded ? <Check className="w-4 h-4 text-[#3b82f6]" /> : 
+              <Download className="w-4 h-4" />}
+          </button>
         </div>
 
         <AddToPlaylistModal
@@ -235,14 +246,25 @@ const SongCard = ({ song, index, showIndex, compact, variant = 'grid', onSongAdd
 
 
         {/* TEXT */}
-        <div className="flex flex-col gap-1">
-          <h3 className={cn("font-bold truncate text-[16px] leading-tight", isCurrentSong ? "text-[#3b82f6]" : "text-white")}>
-            {song.title}
-          </h3>
-          <p className="text-[14px] text-[#B3B3B3] truncate line-clamp-2 leading-tight">
-            {/* Use line-clamp-2 for description/artist to match Spotify cards */}
-            {song.artist}
-          </p>
+        <div className="flex items-start justify-between gap-2">
+          <div className="flex flex-col gap-1 overflow-hidden">
+            <h3 className={cn("font-bold truncate text-[16px] leading-tight", isCurrentSong ? "text-[#3b82f6]" : "text-white")}>
+              {song.title}
+            </h3>
+            <p className="text-[14px] text-[#B3B3B3] truncate line-clamp-2 leading-tight">
+              {/* Use line-clamp-2 for description/artist to match Spotify cards */}
+              {song.artist}
+            </p>
+          </div>
+          <button 
+             onClick={(e) => { e.stopPropagation(); downloaded ? removeSong(song.id) : downloadSong(song) }}
+             disabled={downloading}
+             className="text-[#B3B3B3] hover:text-white shrink-0 py-1"
+          >
+             {downloading ? <Loader2 className="w-4 h-4 animate-spin text-[#3b82f6]" /> : 
+              downloaded ? <Check className="w-4 h-4 text-[#3b82f6]" /> : 
+              <Download className="w-4 h-4" />}
+          </button>
         </div>
       </div>
 

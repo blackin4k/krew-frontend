@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { songsApi, playerApi, radioApi, API_URL } from '@/lib/api';
 import { normalizeQueueResponse } from '@/lib/queue';
 import { toast } from 'sonner';
+import { useOfflineStore } from './offlineStore';
 
 export interface Song {
   id: number;
@@ -695,7 +696,11 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     }
 
     try {
-      const offlineSong = song as any;
+      // Resolve downloaded version if exists
+      const { downloadedSongs } = useOfflineStore.getState();
+      const downloadedVersion = downloadedSongs.find(s => s.id === song.id);
+      
+      const offlineSong = (downloadedVersion || song) as any;
       let data = { audio: '', cover: '' };
 
       if (!offlineSong.local) {

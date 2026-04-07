@@ -1,6 +1,6 @@
 import type { CapacitorConfig } from '@capacitor/cli';
 
-const remoteAppUrl = process.env.CAP_SERVER_URL ?? 'https://kreewaux.xyz';
+const remoteAppUrl = process.env.CAP_SERVER_URL ?? 'https://apk.kreew.in';
 
 const config: CapacitorConfig = {
   appId: 'com.krew.mobile',
@@ -14,6 +14,7 @@ const config: CapacitorConfig = {
       'kreewaux.xyz',
       'api.kreewaux.xyz',
       '*.kreewaux.xyz',
+      '*.kreew.in',
       '*.r2.dev',
       'pub-*.r2.dev',
     ],

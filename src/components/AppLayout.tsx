@@ -6,13 +6,16 @@ import OfflineBanner from "./OfflineBanner";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { useUIStore } from "@/stores/uiStore";
+import { useNetworkStatus } from "@/hooks/useNetworkStatus";
 
 const Player = lazy(() => import("./Player"));
 const Visualizer = lazy(() => import("./Visualizer"));
+const OfflineLibrary = lazy(() => import("@/pages/OfflineLibrary"));
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   useKeyboardShortcuts();
   const { isSidebarOpen, setSidebarOpen } = useUIStore();
+  const { isOnline } = useNetworkStatus();
 
   return (
     <div className="relative min-h-screen w-full overflow-hidden bg-[#0a0a0a]">
@@ -32,14 +35,15 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         </Sheet>
       </div>
 
-      {/* Main Content Area 
-          - Left margin respects sidebar (64px w + padding) -> actually we will make sidebar wider and floating
-          - Bottom padding respects player height
-      */}
+      {/* Main Content Area */}
       <main className="absolute top-0 right-0 bottom-0 left-0 md:left-72 overflow-y-auto pb-40 md:pb-32 pt-0 pr-0 pl-0 md:pt-4 md:pr-4 z-10">
         {/* Inner Content Container - Translucent background for the "page" feel */}
         <div className="min-h-full w-full md:rounded-2xl bg-[#121212]/95 backdrop-blur-md overflow-hidden relative">
-          {children}
+          {isOnline ? children : (
+            <Suspense fallback={null}>
+              <OfflineLibrary />
+            </Suspense>
+          )}
         </div>
       </main>
 

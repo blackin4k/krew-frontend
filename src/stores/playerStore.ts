@@ -42,6 +42,14 @@ interface PlayerState {
   visualizerColor: string | null;
   setVisualizerColor: (color: string | null) => void;
 
+  // Segment Looper
+  loopStartTime: number;
+  loopEndTime: number;
+  loopSegmentEnabled: boolean;
+  setLoopStartTime: (time: number) => void;
+  setLoopEndTime: (time: number) => void;
+  setLoopSegmentEnabled: (enabled: boolean) => void;
+
   // Lab (EQ & FX)
   eqGains: number[];
   vinylMode: boolean;
@@ -142,6 +150,13 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   lastPlayStart: 0,
   isRemoteUpdate: false,
   isLoadingNext: false,
+
+  loopStartTime: 0,
+  loopEndTime: 0,
+  loopSegmentEnabled: false,
+  setLoopStartTime: (loopStartTime) => set({ loopStartTime }),
+  setLoopEndTime: (loopEndTime) => set({ loopEndTime }),
+  setLoopSegmentEnabled: (loopSegmentEnabled) => set({ loopSegmentEnabled }),
 
   visualizerColor: null,
   eqGains: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
@@ -325,6 +340,13 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
               if ((state._audioA === audio && state._activeAudio === 'A') ||
                 (state._audioB === audio && state._activeAudio === 'B')) {
                 const duration = Math.max(0, audio.duration || 0);
+
+                // Advanced Segment Looping Mechanism
+                if (state.loopSegmentEnabled && state.loopEndTime > 0 && audio.currentTime >= state.loopEndTime) {
+                   audio.currentTime = state.loopStartTime;
+                   if (!audio.paused) audio.play();
+                }
+
                 set({ progress: audio.currentTime, duration });
                 const timeLeft = duration - audio.currentTime;
                 if (timeLeft > 0 && timeLeft <= state.crossfadeDuration && !state._isCrossfading && state.queue.length > 0) {
@@ -535,6 +557,13 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
               (state._audioB === audio && state._activeAudio === 'B')) {
 
               const duration = Math.max(0, audio.duration || 0);
+
+              // Advanced Segment Looping Mechanism
+              if (state.loopSegmentEnabled && state.loopEndTime > 0 && audio.currentTime >= state.loopEndTime) {
+                  audio.currentTime = state.loopStartTime;
+                  if (!audio.paused) audio.play();
+              }
+
               set({ progress: audio.currentTime, duration });
 
               const timeLeft = duration - audio.currentTime;
@@ -666,8 +695,18 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     }
 
     try {
-      const response = await playerApi.play(song.id);
-      const data = response.data;
+      const offlineSong = song as any;
+      let data = { audio: '', cover: '' };
+
+      if (!offlineSong.local) {
+        if (!navigator.onLine) {
+            toast.error("You are offline. Play downloaded songs from your Offline Library.");
+            set({ isPlaying: false, isLoadingNext: false });
+            return;
+        }
+        const response = await playerApi.play(song.id);
+        data = response.data || { audio: '', cover: '' };
+      }
 
       if (activeGain && oppositeGain) {
         activeGain.gain.setValueAtTime(1, ctx.currentTime);
@@ -676,7 +715,6 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       oppositeAudio.pause();
 
       // Future Playback Switch for Offline files
-      const offlineSong = song as any;
       if (offlineSong.local && offlineSong.filePath) {
         audio.src = Capacitor.isNativePlatform()
           ? Capacitor.convertFileSrc(offlineSong.filePath)

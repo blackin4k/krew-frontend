@@ -1,0 +1,30 @@
+
+> krew-mobile-cap@0.0.0 build
+> vite build
+
+[36mvite v5.4.21 [32mbuilding for production...[36m[39m
+transforming...
+Browserslist: browsers data (caniuse-lite) is 8 months old. Please run:
+  npx update-browserslist-db@latest
+  Why you should do it regularly: https://github.com/browserslist/update-db#readme
+
+[1m[33mwarn[39m[22m - The class `duration-[2000ms]` is ambiguous and matches multiple utilities.
+[1m[33mwarn[39m[22m - If this is content and not a class, replace it with `duration-&lsqb;2000ms&rsqb;` to silence this warning.
+
+[1m[33mwarn[39m[22m - The class `ease-[cubic-bezier(0.22,1,0.36,1)]` is ambiguous and matches multiple utilities.
+[1m[33mwarn[39m[22m - If this is content and not a class, replace it with `ease-&lsqb;cubic-bezier(0.22,1,0.36,1)&rsqb;` to silence this warning.
+[32m✓[39m 4 modules transformed.
+[31mx[39m Build failed in 1.44s
+[31merror during build:
+[31m[vite:css] [postcss] C:/krewv1/krew-mobile-cap/src/index.css:147:5: The `ease-[cubic-bezier(0.22,` class does not exist. If `ease-[cubic-bezier(0.22,` is a custom class, make sure it is defined within a `@layer` directive.[31m
+file: [36mC:/krewv1/krew-mobile-cap/src/index.css:147:4[31m
+    at Input.error (C:\krewv1\krew-mobile-cap\node_modules\postcss\lib\input.js:135:16)
+    at AtRule.error (C:\krewv1\krew-mobile-cap\node_modules\postcss\lib\node.js:146:32)
+    at processApply (C:\krewv1\krew-mobile-cap\node_modules\tailwindcss\lib\lib\expandApplyAtRules.js:380:29)
+    at C:\krewv1\krew-mobile-cap\node_modules\tailwindcss\lib\lib\expandApplyAtRules.js:551:9
+    at C:\krewv1\krew-mobile-cap\node_modules\tailwindcss\lib\processTailwindFeatures.js:55:50
+    at async plugins (C:\krewv1\krew-mobile-cap\node_modules\tailwindcss\lib\plugin.js:38:17)
+    at async LazyResult.runAsync (C:\krewv1\krew-mobile-cap\node_modules\postcss\lib\lazy-result.js:293:11)
+    at async compileCSS (file:///C:/krewv1/krew-mobile-cap/node_modules/vite/dist/node/chunks/dep-BK3b2jBa.js:36898:21)
+    at async Object.transform (file:///C:/krewv1/krew-mobile-cap/node_modules/vite/dist/node/chunks/dep-BK3b2jBa.js:36171:11)
+    at async transform (file:///C:/krewv1/krew-mobile-cap/node_modules/rollup/dist/es/shared/node-entry.js:19581:16)[39m

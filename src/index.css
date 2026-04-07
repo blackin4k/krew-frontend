@@ -1,0 +1,234 @@
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@300;400;500;600&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 7%;
+    /* #121212 is approx 7% light */
+    --foreground: 0 0% 100%;
+
+    --card: 0 0% 9%;
+    /* #181818 */
+    --card-foreground: 0 0% 100%;
+
+    --popover: 0 0% 9%;
+    --popover-foreground: 0 0% 100%;
+
+    --primary: 141 73% 42%;
+    /* #3b82f6 - Primary Blue */
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 0 0% 9%;
+    --secondary-foreground: 0 0% 100%;
+
+    --muted: 0 0% 16%;
+    --muted-foreground: 0 0% 70%;
+    /* #B3B3B3 */
+
+    --accent: 141 73% 42%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 98%;
+
+    --border: 0 0% 16%;
+    /* Divider rgba(255,255,255,0.08) */
+    --input: 0 0% 16%;
+    --ring: 141 73% 42%;
+
+    --radius: 0.75rem;
+
+    --sidebar-background: 0 0% 0%;
+    /* Black */
+    --sidebar-foreground: 0 0% 70%;
+    --sidebar-primary: 141 73% 42%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 0 0% 9%;
+    --sidebar-accent-foreground: 0 0% 100%;
+    --sidebar-border: 0 0% 9%;
+    --sidebar-ring: 141 73% 42%;
+  }
+
+  .dark {
+    --background: 0 0% 7%;
+    --foreground: 0 0% 100%;
+
+    --card: 0 0% 9%;
+    --card-foreground: 0 0% 100%;
+
+    --popover: 0 0% 9%;
+    --popover-foreground: 0 0% 100%;
+
+    --primary: 141 73% 42%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 0 0% 9%;
+    --secondary-foreground: 0 0% 100%;
+
+    --muted: 0 0% 16%;
+    --muted-foreground: 0 0% 70%;
+
+    --accent: 141 73% 42%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 0 0% 98%;
+
+    --border: 0 0% 16%;
+    --input: 0 0% 16%;
+    --ring: 141 73% 42%;
+
+    --sidebar-background: 0 0% 0%;
+    --sidebar-foreground: 0 0% 70%;
+    --sidebar-primary: 141 73% 42%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 0 0% 9%;
+    --sidebar-accent-foreground: 0 0% 100%;
+    --sidebar-border: 0 0% 9%;
+    --sidebar-ring: 141 73% 42%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  html {
+    @apply scroll-smooth;
+    background-color: #121212;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    font-family: 'Inter', sans-serif;
+    background-color: #121212;
+    /* Enforce global dark bg */
+  }
+
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    /* Spotify uses Circular, which is geometric sans. SF Pro/Inter is fine. Space Grotesk is a bit too stylistic, maybe reset? User asked for SF Pro / Inter */
+    font-family: 'Inter', sans-serif;
+    letter-spacing: -0.02em;
+  }
+}
+
+@layer utilities {
+  /* Removed Glass Classes - Replaced with Solid Utilities per spec */
+
+  /* Spotify Design System - No Glass */
+
+  .glass {
+    @apply bg-[#181818];
+  }
+
+  .glass-card {
+    @apply bg-[#181818] shadow-sm;
+  }
+
+  .glass-panel {
+    @apply bg-[#1E1E1E];
+  }
+
+  .glass-premium {
+    @apply bg-[#181818];
+  }
+
+  /* Floating cards with Spotify-like lift */
+  .card-elevated {
+    @apply bg-[#181818] rounded-xl transition-all duration-200;
+    transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+  }
+
+  .card-elevated:hover {
+    transform: translateY(-4px);
+  }
+
+  .text-gradient {
+    /* Remove gradient text, use solid white or accent */
+    @apply text-white;
+  }
+
+  .hover-lift {
+    @apply transition-all duration-200 hover:-translate-y-1;
+    transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  /* Keep basic helpers */
+  .animate-pulse-slow {
+    animation: pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  }
+
+  /* Hide scrollbar for Chrome, Safari and Opera */
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+
+
+  /* Hide scrollbar for IE, Edge and Firefox */
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    /* IE and Edge */
+    scrollbar-width: none;
+    /* Firefox */
+  }
+}
+
+/* Global Scrollbar Hide (Native Feel) */
+@layer base {
+  * {
+    scrollbar-width: none;
+    /* Firefox */
+    -ms-overflow-style: none;
+    /* IE/Edge */
+  }
+
+  *::-webkit-scrollbar {
+    display: none;
+    /* Chrome/Safari */
+  }
+}
+
+/* Audio player range input */
+input[type="range"] {
+  @apply appearance-none bg-transparent cursor-pointer;
+}
+
+input[type="range"]::-webkit-slider-track {
+  @apply h-1 rounded-full bg-muted;
+}
+
+input[type="range"]::-webkit-slider-thumb {
+  @apply appearance-none h-3 w-3 rounded-full bg-foreground -mt-1 transition-transform hover:scale-125;
+}
+
+input[type="range"]::-moz-range-track {
+  @apply h-1 rounded-full bg-muted;
+}
+
+input[type="range"]::-moz-range-thumb {
+  @apply h-3 w-3 rounded-full bg-foreground border-0 transition-transform hover:scale-125;
+}
+
+@layer utilities {
+  .pt-safe {
+    padding-top: env(safe-area-inset-top);
+  }
+
+  .pb-safe {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  .h-safe {
+    height: calc(100% - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  }
+}

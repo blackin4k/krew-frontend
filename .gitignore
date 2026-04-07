@@ -1,0 +1,10 @@
+node_modules/
+dist/
+android/
+.env
+
+# optional but recommended
+.DS_Store
+*.log
+coverage/
+.vscode/

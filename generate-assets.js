@@ -1,4 +1,4 @@
-# generate-assets.js
+// generate-assets.js
 // Run with: node generate-assets.js
 // Requires: npm install -D @capacitor/assets
 //

@@ -1,0 +1,19 @@
+{
+  "name": "KREW",
+  "short_name": "KREW",
+  "description": "KREW - Your Personal Music Streaming Platform",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#0A0A0C",
+  "theme_color": "#0A0A0C",
+  "icons": [
+    {
+      "src": "/logo.png",
+      "sizes": "1024x1024",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
+

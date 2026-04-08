@@ -892,7 +892,7 @@ const ExpandedPlayerComponent = memo(({
               <div className="relative z-30">
                 <div
                   ref={progressBarRef}
-                  className="relative h-10 flex flex-col justify-center group touch-none"
+                  className="relative h-10 flex flex-col justify-center group touch-none px-4"
                   onPointerDown={(e) => e.stopPropagation()}
                 >
                   {loopSegmentEnabled && duration && (
@@ -909,7 +909,9 @@ const ExpandedPlayerComponent = memo(({
                       {/* Start Handle Wrapper */}
                       <div
                         className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 z-40 pointer-events-none"
-                        style={{ left: `${(isLoopStartDragging ? localLoopStart : loopStartTime) / duration * 100}%` }}
+                        style={{
+                          left: `clamp(16px, ${(isLoopStartDragging ? localLoopStart : loopStartTime) / duration * 100}%, calc(100% - 16px))`
+                        }}
                       >
                         {/* Label */}
                         <div className={cn(
@@ -953,7 +955,9 @@ const ExpandedPlayerComponent = memo(({
                       {/* End Handle Wrapper */}
                       <div
                         className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 z-40 pointer-events-none"
-                        style={{ left: `${(isLoopEndDragging ? localLoopEnd : loopEndTime) / duration * 100}%` }}
+                        style={{
+                          left: `clamp(16px, ${(isLoopEndDragging ? localLoopEnd : loopEndTime) / duration * 100}%, calc(100% - 16px))`
+                        }}
                       >
                         {/* Label */}
                         <div className={cn(

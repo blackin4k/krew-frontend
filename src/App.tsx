@@ -146,7 +146,9 @@ const App = () => {
                 element={
                   <ProtectedRoute>
                     <AppLayout>
-                      <Outlet />
+                      <Suspense fallback={<RouteFallback />}>
+                        <Outlet />
+                      </Suspense>
                     </AppLayout>
                   </ProtectedRoute>
                 }

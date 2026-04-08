@@ -56,12 +56,8 @@ const Auth = () => {
         animate={{ opacity: 1, y: 0 }}
         className="w-full max-w-[390px]"
       >
-        {/* Logo */}
-        <div className="flex flex-col items-center mb-12">
-          {/* Spotify-like minimal logo or just text */}
-          <div className="w-16 h-16 rounded-2xl bg-white/10 flex items-center justify-center mb-6 backdrop-blur-xl border border-white/5 shadow-2xl">
-            <Music2 className="h-8 w-8 text-white" />
-          </div>
+        {/* NAME*/}
+        <div className="flex flex-col items-center mb-1">
           <h1 className="text-3xl font-bold tracking-tight text-white mb-2">KREW</h1>
         </div>
 

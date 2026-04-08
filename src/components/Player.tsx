@@ -768,7 +768,7 @@ const ExpandedPlayerComponent = memo(({
           )}
 
           {/* CONTENT CONTAINER - Flex Column */}
-          <div className="relative z-20 flex flex-col h-full w-full px-6 pb-12">
+          <div className="relative z-20 flex flex-col h-full w-full px-6 pt-4 pb-12">
 
             {/* 1. TOP BAR - Drag Handle Only */}
             <div className={cn("flex items-center justify-center h-8 shrink-0 w-full mt-4 mb-4 transition-all duration-300", 
@@ -778,7 +778,7 @@ const ExpandedPlayerComponent = memo(({
             </div>
 
             {/* 2. ARTWORK */}
-            <div className={cn("flex-1 flex items-center justify-center min-h-0 py-4 relative transition-all duration-300",
+            <div className={cn("flex-1 flex items-end justify-center min-h-0 pt-12 pb-6 relative transition-all duration-300",
               (isLoopStartDragging || isLoopEndDragging) && "blur-md opacity-40 pointer-events-none"
             )}>
               <motion.div
@@ -810,7 +810,7 @@ const ExpandedPlayerComponent = memo(({
             </div>
 
             {/* 3. TRACK INFO & CONTROLS */}
-            <div className="shrink-0 flex flex-col mt-6">
+            <div className="shrink-0 flex flex-col mt-8">
 
               {/* Title & More Button Row */}
               <div className={cn("flex items-center justify-between mb-6 px-1 transition-all duration-300",
@@ -878,12 +878,12 @@ const ExpandedPlayerComponent = memo(({
 
                       {/* Start Handle Wrapper */}
                       <div
-                        className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 z-40 flex flex-col items-center justify-center pointer-events-none"
+                        className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 z-40 pointer-events-none"
                         style={{ left: `${(isLoopStartDragging ? localLoopStart : loopStartTime) / duration * 100}%` }}
                       >
                         {/* Label */}
                         <div className={cn(
-                          "absolute bottom-[calc(100%+4px)] text-[8px] font-bold tracking-[0.2em] text-white/40 transition-opacity",
+                          "absolute -top-4 left-1/2 -translate-x-1/2 text-[8px] font-bold tracking-[0.2em] text-white/40 transition-opacity whitespace-nowrap",
                           isLoopStartDragging ? "opacity-0" : "opacity-100"
                         )}>
                           START
@@ -891,7 +891,7 @@ const ExpandedPlayerComponent = memo(({
 
                         {/* Interactive Handle */}
                         <motion.div
-                          className="cursor-ew-resize group/handle p-3 flex items-center justify-center pointer-events-auto"
+                          className="cursor-ew-resize group/handle p-2 flex items-center justify-center pointer-events-auto"
                           onPointerDown={(e) => startLoopDrag(e, 'start')}
                           whileHover={{ scale: 1.2 }}
                           whileDrag={{ scale: 1.4 }}
@@ -906,10 +906,10 @@ const ExpandedPlayerComponent = memo(({
                         <AnimatePresence>
                           {isLoopStartDragging && (
                             <motion.div
-                              initial={{ opacity: 0, scale: 0.8, y: -20 }}
-                              animate={{ opacity: 1, scale: 1, y: -35 }}
-                              exit={{ opacity: 0, scale: 0.8, y: -20 }}
-                              className="absolute left-1/2 -translate-x-1/2 bg-black/80 backdrop-blur-md text-white text-[10px] px-2 py-1 rounded-md border border-white/20 whitespace-nowrap font-mono shadow-xl flex flex-col items-center pointer-events-none"
+                              initial={{ opacity: 0, scale: 0.8, y: 10 }}
+                              animate={{ opacity: 1, scale: 1, y: 0 }}
+                              exit={{ opacity: 0, scale: 0.8, y: 10 }}
+                              className="absolute -top-10 left-1/2 -translate-x-1/2 bg-black/80 backdrop-blur-md text-white text-[10px] px-2 py-1 rounded-md border border-white/20 whitespace-nowrap font-mono shadow-xl flex flex-col items-center pointer-events-none"
                             >
                               <span>{formatTime(localLoopStart)}</span>
                               <span className="text-[9px] opacity-60">
@@ -922,12 +922,12 @@ const ExpandedPlayerComponent = memo(({
 
                       {/* End Handle Wrapper */}
                       <div
-                        className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 z-40 flex flex-col items-center justify-center pointer-events-none"
+                        className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 z-40 pointer-events-none"
                         style={{ left: `${(isLoopEndDragging ? localLoopEnd : loopEndTime) / duration * 100}%` }}
                       >
                         {/* Label */}
                         <div className={cn(
-                          "absolute bottom-[calc(100%+4px)] text-[8px] font-bold tracking-[0.2em] text-white/40 transition-opacity",
+                          "absolute -top-4 left-1/2 -translate-x-1/2 text-[8px] font-bold tracking-[0.2em] text-white/40 transition-opacity whitespace-nowrap",
                           isLoopEndDragging ? "opacity-0" : "opacity-100"
                         )}>
                           END
@@ -935,7 +935,7 @@ const ExpandedPlayerComponent = memo(({
 
                         {/* Interactive Handle */}
                         <motion.div
-                          className="cursor-ew-resize group/handle p-3 flex items-center justify-center pointer-events-auto"
+                          className="cursor-ew-resize group/handle p-2 flex items-center justify-center pointer-events-auto"
                           onPointerDown={(e) => startLoopDrag(e, 'end')}
                           whileHover={{ scale: 1.2 }}
                           whileDrag={{ scale: 1.4 }}
@@ -950,10 +950,10 @@ const ExpandedPlayerComponent = memo(({
                         <AnimatePresence>
                           {isLoopEndDragging && (
                             <motion.div
-                              initial={{ opacity: 0, scale: 0.8, y: -20 }}
-                              animate={{ opacity: 1, scale: 1, y: -35 }}
-                              exit={{ opacity: 0, scale: 0.8, y: -20 }}
-                              className="absolute left-1/2 -translate-x-1/2 bg-black/80 backdrop-blur-md text-white text-[10px] px-2 py-1 rounded-md border border-white/20 whitespace-nowrap font-mono shadow-xl flex flex-col items-center pointer-events-none"
+                              initial={{ opacity: 0, scale: 0.8, y: 10 }}
+                              animate={{ opacity: 1, scale: 1, y: 0 }}
+                              exit={{ opacity: 0, scale: 0.8, y: 10 }}
+                              className="absolute -top-10 left-1/2 -translate-x-1/2 bg-black/80 backdrop-blur-md text-white text-[10px] px-2 py-1 rounded-md border border-white/20 whitespace-nowrap font-mono shadow-xl flex flex-col items-center pointer-events-none"
                             >
                               <span>{formatTime(localLoopEnd)}</span>
                               <span className="text-[9px] opacity-60">

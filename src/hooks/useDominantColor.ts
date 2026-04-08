@@ -24,9 +24,8 @@ export function useDominantColor(imageUrl: string | null) {
                 ctx.drawImage(img, 0, 0, 1, 1);
                 const [r, g, b] = ctx.getImageData(0, 0, 1, 1).data;
                 setColor({ r, g, b });
-            } catch (e) {
-                console.warn("Error extracting color", e);
-                // Fallback or ignore (CORS or other issue)
+            } catch {
+                setColor(null);
             }
         };
     }, [imageUrl]);

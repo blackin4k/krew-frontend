@@ -667,9 +667,9 @@ const ExpandedPlayerComponent = memo(({
           transition={{ type: "spring", damping: 30, stiffness: 300 }}
           drag="y"
           dragConstraints={{ top: 0, bottom: 0 }}
-          dragElastic={{ top: 0, bottom: 0.2 }} // Only pull down
+          dragElastic={{ top: 0, bottom: 0.4 }} // Only pull down
           onDragEnd={(_, info) => {
-            if (info.offset.y > 150 || info.velocity.y > 500) {
+            if (info.offset.y > 100 || info.velocity.y > 300) {
               setExpanded(false);
             }
           }}
@@ -799,7 +799,7 @@ const ExpandedPlayerComponent = memo(({
             </div>
 
             {/* Scrollable main content (only when space is tight) */}
-            <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain">
+            <div className="flex-1 min-h-0 overflow-hidden">
               <div className="w-full min-h-0 flex flex-col items-center gap-6 sm:gap-8 py-3">
 
                 {/* 2. ARTWORK */}
@@ -892,7 +892,7 @@ const ExpandedPlayerComponent = memo(({
               <div className="relative z-30">
                 <div
                   ref={progressBarRef}
-                  className="relative h-10 flex flex-col justify-center group touch-none px-4"
+                  className="relative h-10 flex flex-col justify-center group touch-none px-0"
                   onPointerDown={(e) => e.stopPropagation()}
                 >
                   {loopSegmentEnabled && duration && (
@@ -1007,7 +1007,7 @@ const ExpandedPlayerComponent = memo(({
                     step={1}
                     onValueChange={handleSeek}
                     onValueCommit={handleSeekCommit}
-                    className="cursor-pointer h-3 flex items-center relative z-20"
+                    className="px-4 cursor-pointer h-3 flex items-center relative z-20"
                     color="#ffffff"
                   />
                 </div>

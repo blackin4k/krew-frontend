@@ -768,21 +768,21 @@ const ExpandedPlayerComponent = memo(({
           )}
 
           {/* CONTENT CONTAINER - Flex Column */}
-          <div className="relative z-20 flex flex-col h-full w-full px-6 pt-4 pb-12">
+          <div className="relative z-20 flex flex-col h-full w-full px-6 pt-4 pb-4">
 
             {/* 1. TOP BAR - Drag Handle Only */}
-            <div className={cn("flex items-center justify-center h-8 shrink-0 w-full mt-4 mb-4 transition-all duration-300", 
+            <div className={cn("flex items-center justify-center h-8 shrink-0 w-full mt-2 mb-2 transition-all duration-300", 
               (isLoopStartDragging || isLoopEndDragging) && "blur-sm opacity-50 pointer-events-none"
             )}>
               <div className="w-10 h-1 rounded-full bg-white/20" />
             </div>
 
             {/* 2. ARTWORK */}
-            <div className={cn("flex-1 flex items-end justify-center min-h-0 pt-12 pb-6 relative transition-all duration-300",
+            <div className={cn("flex items-center justify-center min-h-0 pt-4 pb-4 relative transition-all duration-300",
               (isLoopStartDragging || isLoopEndDragging) && "blur-md opacity-40 pointer-events-none"
             )}>
               <motion.div
-                className="relative aspect-square w-full max-w-[340px] rounded-[18px] z-10"
+                className="relative aspect-square w-full max-w-[340px] max-h-[60vh] rounded-[18px] z-10"
                 style={{
                   boxShadow: `0 10px 40px -10px ${uiColor}50`
                 }}
@@ -810,7 +810,7 @@ const ExpandedPlayerComponent = memo(({
             </div>
 
             {/* 3. TRACK INFO & CONTROLS */}
-            <div className="shrink-0 flex flex-col mt-8">
+            <div className="shrink-0 flex flex-col mt-12">
 
               {/* Title & More Button Row */}
               <div className={cn("flex items-center justify-between mb-6 px-1 transition-all duration-300",
@@ -859,7 +859,7 @@ const ExpandedPlayerComponent = memo(({
               </div>
 
               {/* Progress - White Bar & Loop Track */}
-              <div className="mb-8 mt-2 relative z-30">
+              <div className="mb-10 mt-2 relative z-30">
                 <div
                   ref={progressBarRef}
                   className="relative h-10 flex flex-col justify-center group touch-none"
@@ -984,7 +984,7 @@ const ExpandedPlayerComponent = memo(({
               </div>
 
               {/* Main Controls - Shuffle, Prev, Play, Next, Repeat */}
-              <div className={cn("flex items-center justify-between mb-8 px-2 transition-all duration-300",
+              <div className={cn("flex items-center justify-between mb-10 px-2 transition-all duration-300",
                 (isLoopStartDragging || isLoopEndDragging) && "blur-sm opacity-50 pointer-events-none"
               )}>
                 <button
@@ -1069,7 +1069,7 @@ const ExpandedPlayerComponent = memo(({
               </div>
 
               {/* Bottom Actions: Lyrics, Airplay, List */}
-              <div className={cn("flex justify-center pt-4 transition-all duration-300",
+              <div className={cn("flex justify-center pt-4 pb-4 transition-all duration-300",
                 (isLoopStartDragging || isLoopEndDragging) && "blur-sm opacity-50 pointer-events-none"
               )}>
                 <div

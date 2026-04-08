@@ -3,7 +3,7 @@ import { persist } from 'zustand/middleware';
 import { Filesystem, Directory } from '@capacitor/filesystem';
 import { Song } from './playerStore';
 import { toast } from 'sonner';
-import { songsApi } from '@/lib/api';
+import { songsApi, API_URL } from '@/lib/api';
 
 const blobToBase64 = (blob: Blob): Promise<string> => {
   return new Promise((resolve, reject) => {
@@ -20,6 +20,7 @@ export interface OfflineSong extends Song {
   downloadedAt: number;
   filePath: string;
   local: boolean;
+  coverFileName?: string;
 }
 
 interface OfflineState {
@@ -68,9 +69,42 @@ export const useOfflineStore = create<OfflineState>()(
             directory: Directory.Data
           });
 
+          // Phase 2 - Download Cover
+          let localCoverUri = song.cover;
+          let savedCoverFileName = undefined;
+          
+          if (song.cover) {
+            try {
+              let coverUrl = song.cover;
+              if (!coverUrl.startsWith('http')) {
+                const cleanPath = coverUrl.startsWith('/') ? coverUrl.slice(1) : coverUrl;
+                const cleanApiUrl = API_URL.endsWith('/') ? API_URL.slice(0, -1) : API_URL;
+                coverUrl = `${cleanApiUrl}/covers/${cleanPath}`;
+              }
+              const coverResponse = await fetch(coverUrl);
+              if (coverResponse.ok) {
+                const coverBlob = await coverResponse.blob();
+                const coverBase64WithPrefix = await blobToBase64(coverBlob);
+                const coverBase64 = coverBase64WithPrefix.split(',')[1];
+                savedCoverFileName = `cover_${song.id}.jpg`;
+                
+                const coverWriteResult = await Filesystem.writeFile({
+                  path: savedCoverFileName,
+                  data: coverBase64,
+                  directory: Directory.Data
+                });
+                localCoverUri = coverWriteResult.uri;
+              }
+            } catch (err) {
+              console.warn("Could not download cover for ", song.id, err);
+            }
+          }
+
           // Save metadata to localStorage
           const offlineSong: OfflineSong = {
             ...song,
+            cover: localCoverUri,
+            coverFileName: savedCoverFileName,
             downloadedAt: Date.now(),
             filePath: writeResult.uri, // Real absolute URI
             local: true // Offline file definitely exists
@@ -97,6 +131,14 @@ export const useOfflineStore = create<OfflineState>()(
             path: `song_${songId}.mp3`,
             directory: Directory.Data
           });
+          
+          const song = get().downloadedSongs.find(s => s.id === songId);
+          if (song?.coverFileName) {
+            await Filesystem.deleteFile({
+              path: song.coverFileName,
+              directory: Directory.Data
+            });
+          }
         } catch (e) {
           console.warn("Could not delete from filesystem, it might already be removed:", e);
         }

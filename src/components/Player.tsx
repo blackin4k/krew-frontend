@@ -419,12 +419,12 @@ export default function Player() {
     : paletteColors
       ? paletteColors
       : baseColor
-      ? [
-        `rgba(${baseColor.r}, ${baseColor.g}, ${baseColor.b}, 0.3)`,
-        `rgba(${Math.min(baseColor.r + 40, 255)}, ${Math.min(baseColor.g + 40, 255)}, ${Math.min(baseColor.b + 40, 255)}, 0.8)`,
-        `rgba(${Math.max(baseColor.r - 40, 0)}, ${Math.max(baseColor.g - 40, 0)}, ${Math.max(baseColor.b - 40, 0)}, 1)`
-      ]
-      : undefined;
+        ? [
+          `rgba(${baseColor.r}, ${baseColor.g}, ${baseColor.b}, 0.3)`,
+          `rgba(${Math.min(baseColor.r + 40, 255)}, ${Math.min(baseColor.g + 40, 255)}, ${Math.min(baseColor.b + 40, 255)}, 0.8)`,
+          `rgba(${Math.max(baseColor.r - 40, 0)}, ${Math.max(baseColor.g - 40, 0)}, ${Math.max(baseColor.b - 40, 0)}, 1)`
+        ]
+        : undefined;
 
   const uiColor = visualizerColor || (baseColor ? `rgb(${baseColor.r}, ${baseColor.g}, ${baseColor.b})` : "#ffffff");
 
@@ -842,272 +842,272 @@ const ExpandedPlayerComponent = memo(({
                 {/* 3. TRACK INFO & CONTROLS */}
                 <div className="w-full max-w-[420px] shrink-0 flex flex-col gap-5 sm:gap-6">
 
-              {/* Title & More Button Row */}
-              <div className={cn("flex items-center justify-between px-1 transition-all duration-300",
-                (isLoopStartDragging || isLoopEndDragging) && "blur-sm opacity-50 pointer-events-none"
-              )}>
-                <div className="flex flex-col text-left overflow-hidden mr-4 min-w-0 flex-1">
-                  <h2 className="text-[20px] sm:text-[22px] font-bold text-white truncate leading-tight tracking-tight">
-                    {currentSong.title}
-                  </h2>
-                  <p className="text-[16px] sm:text-[18px] text-white/60 truncate font-medium mt-1">
-                    {currentSong.artist}
-                  </p>
-                </div>
+                  {/* Title & More Button Row */}
+                  <div className={cn("flex items-center justify-between px-1 transition-all duration-300",
+                    (isLoopStartDragging || isLoopEndDragging) && "blur-sm opacity-50 pointer-events-none"
+                  )}>
+                    <div className="flex flex-col text-left overflow-hidden mr-4 min-w-0 flex-1">
+                      <h2 className="text-[20px] sm:text-[22px] font-bold text-white truncate leading-tight tracking-tight">
+                        {currentSong.title}
+                      </h2>
+                      <p className="text-[16px] sm:text-[18px] text-white/60 truncate font-medium mt-1">
+                        {currentSong.artist}
+                      </p>
+                    </div>
 
-                {/* LIKE & DOWNLOAD BUTTONS */}
-                <div className="flex flex-row items-center justify-end gap-1">
-                  {!downloadedStatus ? (
-                    <button
-                      onClick={() => currentSong && downloadSong(currentSong)}
-                      disabled={downloadingStatus}
-                      className={cn("p-2 transition-transform active:scale-90", downloadingStatus ? "text-[#3b82f6]" : "text-white/50 hover:text-white")}
-                    >
-                      {downloadingStatus ? <Loader2 className="h-6 w-6 animate-spin" /> : <Download className="h-6 w-6" />}
-                    </button>
-                  ) : (
-                    <button
-                      onClick={() => currentSong && removeSong(currentSong.id)}
-                      className="p-2 text-[#3b82f6] transition-transform hover:scale-105 active:scale-95"
-                    >
-                      <CheckCircle2 className="h-6 w-6" />
-                    </button>
-                  )}
-
-                  <button
-                    onClick={toggleLike}
-                    className="p-2 transition-transform active:scale-90"
-                  >
-                    <Heart
-                      className={cn(
-                        "h-7 w-7 transition-colors drop-shadow-md",
-                        liked ? "fill-white text-white" : "text-white/50 hover:text-white"
+                    {/* LIKE & DOWNLOAD BUTTONS */}
+                    <div className="flex flex-row items-center justify-end gap-1">
+                      {!downloadedStatus ? (
+                        <button
+                          onClick={() => currentSong && downloadSong(currentSong)}
+                          disabled={downloadingStatus}
+                          className={cn("p-2 transition-transform active:scale-90", downloadingStatus ? "text-[#3b82f6]" : "text-white/50 hover:text-white")}
+                        >
+                          {downloadingStatus ? <Loader2 className="h-6 w-6 animate-spin" /> : <Download className="h-6 w-6" />}
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => currentSong && removeSong(currentSong.id)}
+                          className="p-2 text-[#3b82f6] transition-transform hover:scale-105 active:scale-95"
+                        >
+                          <CheckCircle2 className="h-6 w-6" />
+                        </button>
                       )}
-                    />
-                  </button>
-                </div>
-              </div>
 
-              {/* Progress - White Bar & Loop Track */}
-              <div className="relative z-30">
-                <div
-                  ref={progressBarRef}
-                  className="relative h-10 flex flex-col justify-center group touch-none px-0"
-                  onPointerDown={(e) => e.stopPropagation()}
-                >
-                  {loopSegmentEnabled && duration && (
-                    <>
-                      {/* Loop Range Highlight */}
-                      <div
-                        className="absolute top-1/2 h-2 rounded-full bg-white/10 -translate-y-1/2 transition-all pointer-events-none"
-                        style={{
-                          left: `${(loopStartTime / duration) * 100}%`,
-                          width: `${((loopEndTime - loopStartTime) / duration) * 100}%`
-                        }}
-                      />
-
-                      {/* Start Handle Wrapper */}
-                      <div
-                        className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 z-40 pointer-events-none"
-                        style={{
-                          left: `clamp(16px, ${(isLoopStartDragging ? localLoopStart : loopStartTime) / duration * 100}%, calc(100% - 16px))`
-                        }}
+                      <button
+                        onClick={toggleLike}
+                        className="p-2 transition-transform active:scale-90"
                       >
-                        {/* Label */}
-                        <div className={cn(
-                          "absolute -top-4 left-1/2 -translate-x-1/2 text-[8px] font-bold tracking-[0.2em] text-white/40 transition-opacity whitespace-nowrap",
-                          isLoopStartDragging ? "opacity-0" : "opacity-100"
-                        )}>
-                          START
-                        </div>
-
-                        {/* Interactive Handle */}
-                        <motion.div
-                          className="cursor-ew-resize group/handle p-2 flex items-center justify-center pointer-events-auto"
-                          onPointerDown={(e) => startLoopDrag(e, 'start')}
-                          whileHover={{ scale: 1.2 }}
-                          whileDrag={{ scale: 1.4 }}
-                        >
-                          <div className={cn(
-                            "w-3 h-3 bg-blue-400 rounded-full transition-shadow shadow-[0_0_8px_rgba(96,165,250,0.6)] border border-white/20",
-                            isLoopStartDragging && "brightness-125 shadow-[0_0_12px_rgba(96,165,250,0.8)] border-white/40"
-                          )} />
-                        </motion.div>
-
-                        {/* Tooltip */}
-                        <AnimatePresence>
-                          {isLoopStartDragging && (
-                            <motion.div
-                              initial={{ opacity: 0, scale: 0.8, y: 10 }}
-                              animate={{ opacity: 1, scale: 1, y: 0 }}
-                              exit={{ opacity: 0, scale: 0.8, y: 10 }}
-                              className="absolute -top-10 left-1/2 -translate-x-1/2 bg-black/80 backdrop-blur-md text-white text-[10px] px-2 py-1 rounded-md border border-white/20 whitespace-nowrap font-mono shadow-xl flex flex-col items-center pointer-events-none"
-                            >
-                              <span>{formatTime(localLoopStart)}</span>
-                              <span className="text-[9px] opacity-60">
-                                {localLoopStart - initialLoopStart >= 0 ? '+' : ''}{(localLoopStart - initialLoopStart).toFixed(1)}s
-                              </span>
-                            </motion.div>
+                        <Heart
+                          className={cn(
+                            "h-7 w-7 transition-colors drop-shadow-md",
+                            liked ? "fill-white text-white" : "text-white/50 hover:text-white"
                           )}
-                        </AnimatePresence>
-                      </div>
-
-                      {/* End Handle Wrapper */}
-                      <div
-                        className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 z-40 pointer-events-none"
-                        style={{
-                          left: `clamp(16px, ${(isLoopEndDragging ? localLoopEnd : loopEndTime) / duration * 100}%, calc(100% - 16px))`
-                        }}
-                      >
-                        {/* Label */}
-                        <div className={cn(
-                          "absolute -top-4 left-1/2 -translate-x-1/2 text-[8px] font-bold tracking-[0.2em] text-white/40 transition-opacity whitespace-nowrap",
-                          isLoopEndDragging ? "opacity-0" : "opacity-100"
-                        )}>
-                          END
-                        </div>
-
-                        {/* Interactive Handle */}
-                        <motion.div
-                          className="cursor-ew-resize group/handle p-2 flex items-center justify-center pointer-events-auto"
-                          onPointerDown={(e) => startLoopDrag(e, 'end')}
-                          whileHover={{ scale: 1.2 }}
-                          whileDrag={{ scale: 1.4 }}
-                        >
-                          <div className={cn(
-                            "w-3 h-3 bg-red-400 rounded-full transition-shadow shadow-[0_0_8px_rgba(248,113,113,0.6)] border border-white/20",
-                            isLoopEndDragging && "brightness-125 shadow-[0_0_12px_rgba(248,113,113,0.8)] border-white/40"
-                          )} />
-                        </motion.div>
-
-                        {/* Tooltip */}
-                        <AnimatePresence>
-                          {isLoopEndDragging && (
-                            <motion.div
-                              initial={{ opacity: 0, scale: 0.8, y: 10 }}
-                              animate={{ opacity: 1, scale: 1, y: 0 }}
-                              exit={{ opacity: 0, scale: 0.8, y: 10 }}
-                              className="absolute -top-10 left-1/2 -translate-x-1/2 bg-black/80 backdrop-blur-md text-white text-[10px] px-2 py-1 rounded-md border border-white/20 whitespace-nowrap font-mono shadow-xl flex flex-col items-center pointer-events-none"
-                            >
-                              <span>{formatTime(localLoopEnd)}</span>
-                              <span className="text-[9px] opacity-60">
-                                {localLoopEnd - initialLoopEnd >= 0 ? '+' : ''}{(localLoopEnd - initialLoopEnd).toFixed(1)}s
-                              </span>
-                            </motion.div>
-                          )}
-                        </AnimatePresence>
-                      </div>
-                    </>
-                  )}
-
-                  <Slider
-                    defaultValue={[0]}
-                    value={[isDragging ? localProgress : progress]}
-                    max={duration || 100}
-                    step={1}
-                    onValueChange={handleSeek}
-                    onValueCommit={handleSeekCommit}
-                    className="px-4 cursor-pointer h-3 flex items-center relative z-20"
-                    color="#ffffff"
-                  />
-                </div>
-                <div className="flex justify-between text-[11px] font-medium text-white/40 mt-1 tabular-nums font-mono">
-                  <span>{formatTime(isDragging ? localProgress : progress)}</span>
-                  <span>-{formatTime((duration || 0) - (isDragging ? localProgress : progress))}</span>
-                </div>
-              </div>
-
-              {/* Main Controls - Shuffle, Prev, Play, Next, Repeat */}
-              <div className={cn("flex items-center justify-between px-2 transition-all duration-300",
-                (isLoopStartDragging || isLoopEndDragging) && "blur-sm opacity-50 pointer-events-none"
-              )}>
-                <button
-                  onClick={toggleShuffle}
-                  className={cn(
-                    "p-2 transition-all active:scale-90",
-                    shuffle
-                      ? "text-white"
-                      : "text-white/30"
-                  )}
-                  style={shuffle ? { filter: `drop-shadow(0 0 8px ${uiColor})` } : undefined}
-                >
-                  <Shuffle className="h-6 w-6" />
-                </button>
-
-                <button
-                  onClick={prev}
-                  className="text-white/90 hover:text-white active:scale-90 transition-transform"
-                >
-                  <SkipBack className="h-10 w-10 fill-current" />
-                </button>
-
-                <button
-                  onClick={togglePlay}
-                  className="w-[72px] h-[72px] rounded-full flex items-center justify-center text-white active:scale-95 transition-transform"
-                >
-                  {isPlaying ? (
-                    <Pause className="h-[72px] w-[72px] fill-current" />
-                  ) : (
-                    <Play className="h-[72px] w-[72px] fill-current" />
-                  )}
-                </button>
-
-                <button
-                  onClick={next}
-                  className="text-white/90 hover:text-white active:scale-90 transition-transform"
-                >
-                  <SkipForward className="h-10 w-10 fill-current" />
-                </button>
-
-                <button
-                  onClick={toggleRepeat}
-                  className={cn(
-                    "p-2 transition-all active:scale-90",
-                    repeat !== 'off'
-                      ? "text-white"
-                      : "text-white/30"
-                  )}
-                  style={repeat !== 'off' ? { filter: `drop-shadow(0 0 8px ${uiColor})` } : undefined}
-                >
-                  {repeat === 'one' ? (
-                    <Repeat1 className="h-6 w-6" />
-                  ) : (
-                    <Repeat className="h-6 w-6" />
-                  )}
-                </button>
-              </div>
-
-              <div className={cn("space-y-3 transition-all duration-300",
-                (isLoopStartDragging || isLoopEndDragging) && "blur-sm opacity-50 pointer-events-none"
-              )}>
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <button
-                    onClick={() => setLoopSegmentEnabled(!loopSegmentEnabled)}
-                    className={cn(
-                      "inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-xs font-semibold transition-colors",
-                      loopSegmentEnabled
-                        ? "bg-white/15 text-white border border-white/10"
-                        : "bg-white/5 text-white/70 hover:text-white"
-                    )}
-                  >
-                    <ListRestart className="w-4 h-4" />
-                    {loopSegmentEnabled ? 'Loop ON' : 'Loop OFF'}
-                  </button>
-
-                  <div className="text-sm text-white/60 font-medium tabular-nums">
-                    {loopSegmentEnabled
-                      ? `${formatTime(loopStartTime)} → ${formatTime(loopEndTime)}`
-                      : 'Loop range disabled'}
+                        />
+                      </button>
+                    </div>
                   </div>
-                </div>
-              </div>
 
-              {/* Bottom Actions: Lyrics, Airplay, List */}
-              <div className={cn("flex justify-center pt-2 pb-2 transition-all duration-300",
-                (isLoopStartDragging || isLoopEndDragging) && "blur-sm opacity-50 pointer-events-none"
-              )}>
-                <div
-                  className="
+                  {/* Progress - White Bar & Loop Track */}
+                  <div className="relative z-30">
+                    <div
+                      ref={progressBarRef}
+                      className="relative h-10 flex flex-col justify-center group touch-none px-0"
+                      onPointerDown={(e) => e.stopPropagation()}
+                    >
+                      {loopSegmentEnabled && duration && (
+                        <>
+                          {/* Loop Range Highlight */}
+                          <div
+                            className="absolute top-1/2 h-2 rounded-full bg-white/10 -translate-y-1/2 transition-all pointer-events-none"
+                            style={{
+                              left: `${(loopStartTime / duration) * 100}%`,
+                              width: `${((loopEndTime - loopStartTime) / duration) * 100}%`
+                            }}
+                          />
+
+                          {/* Start Handle Wrapper */}
+                          <div
+                            className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 z-40 pointer-events-none"
+                            style={{
+                              left: `clamp(16px, ${(isLoopStartDragging ? localLoopStart : loopStartTime) / duration * 100}%, calc(100% - 16px))`
+                            }}
+                          >
+                            {/* Label */}
+                            <div className={cn(
+                              "absolute -top-4 left-1/2 -translate-x-1/2 text-[8px] font-bold tracking-[0.2em] text-white/40 transition-opacity whitespace-nowrap",
+                              isLoopStartDragging ? "opacity-0" : "opacity-100"
+                            )}>
+                              START
+                            </div>
+
+                            {/* Interactive Handle */}
+                            <motion.div
+                              className="cursor-ew-resize group/handle p-2 flex items-center justify-center pointer-events-auto"
+                              onPointerDown={(e) => startLoopDrag(e, 'start')}
+                              whileHover={{ scale: 1.2 }}
+                              whileDrag={{ scale: 1.4 }}
+                            >
+                              <div className={cn(
+                                "w-3 h-3 bg-blue-400 rounded-full transition-shadow shadow-[0_0_8px_rgba(96,165,250,0.6)] border border-white/20",
+                                isLoopStartDragging && "brightness-125 shadow-[0_0_12px_rgba(96,165,250,0.8)] border-white/40"
+                              )} />
+                            </motion.div>
+
+                            {/* Tooltip */}
+                            <AnimatePresence>
+                              {isLoopStartDragging && (
+                                <motion.div
+                                  initial={{ opacity: 0, scale: 0.8, y: 10 }}
+                                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                                  exit={{ opacity: 0, scale: 0.8, y: 10 }}
+                                  className="absolute -top-10 left-1/2 -translate-x-1/2 bg-black/80 backdrop-blur-md text-white text-[10px] px-2 py-1 rounded-md border border-white/20 whitespace-nowrap font-mono shadow-xl flex flex-col items-center pointer-events-none"
+                                >
+                                  <span>{formatTime(localLoopStart)}</span>
+                                  <span className="text-[9px] opacity-60">
+                                    {localLoopStart - initialLoopStart >= 0 ? '+' : ''}{(localLoopStart - initialLoopStart).toFixed(1)}s
+                                  </span>
+                                </motion.div>
+                              )}
+                            </AnimatePresence>
+                          </div>
+
+                          {/* End Handle Wrapper */}
+                          <div
+                            className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 z-40 pointer-events-none"
+                            style={{
+                              left: `clamp(16px, ${(isLoopEndDragging ? localLoopEnd : loopEndTime) / duration * 100}%, calc(100% - 16px))`
+                            }}
+                          >
+                            {/* Label */}
+                            <div className={cn(
+                              "absolute -top-4 left-1/2 -translate-x-1/2 text-[8px] font-bold tracking-[0.2em] text-white/40 transition-opacity whitespace-nowrap",
+                              isLoopEndDragging ? "opacity-0" : "opacity-100"
+                            )}>
+                              END
+                            </div>
+
+                            {/* Interactive Handle */}
+                            <motion.div
+                              className="cursor-ew-resize group/handle p-2 flex items-center justify-center pointer-events-auto"
+                              onPointerDown={(e) => startLoopDrag(e, 'end')}
+                              whileHover={{ scale: 1.2 }}
+                              whileDrag={{ scale: 1.4 }}
+                            >
+                              <div className={cn(
+                                "w-3 h-3 bg-red-400 rounded-full transition-shadow shadow-[0_0_8px_rgba(248,113,113,0.6)] border border-white/20",
+                                isLoopEndDragging && "brightness-125 shadow-[0_0_12px_rgba(248,113,113,0.8)] border-white/40"
+                              )} />
+                            </motion.div>
+
+                            {/* Tooltip */}
+                            <AnimatePresence>
+                              {isLoopEndDragging && (
+                                <motion.div
+                                  initial={{ opacity: 0, scale: 0.8, y: 10 }}
+                                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                                  exit={{ opacity: 0, scale: 0.8, y: 10 }}
+                                  className="absolute -top-10 left-1/2 -translate-x-1/2 bg-black/80 backdrop-blur-md text-white text-[10px] px-2 py-1 rounded-md border border-white/20 whitespace-nowrap font-mono shadow-xl flex flex-col items-center pointer-events-none"
+                                >
+                                  <span>{formatTime(localLoopEnd)}</span>
+                                  <span className="text-[9px] opacity-60">
+                                    {localLoopEnd - initialLoopEnd >= 0 ? '+' : ''}{(localLoopEnd - initialLoopEnd).toFixed(1)}s
+                                  </span>
+                                </motion.div>
+                              )}
+                            </AnimatePresence>
+                          </div>
+                        </>
+                      )}
+
+                      <Slider
+                        defaultValue={[0]}
+                        value={[isDragging ? localProgress : progress]}
+                        max={duration || 100}
+                        step={1}
+                        onValueChange={handleSeek}
+                        onValueCommit={handleSeekCommit}
+                        className="px-4 cursor-pointer h-3 flex items-center relative z-20"
+                        color="#ffffff"
+                      />
+                    </div>
+                    <div className="flex justify-between text-[11px] font-medium text-white/40 mt-1 tabular-nums font-mono">
+                      <span>{formatTime(isDragging ? localProgress : progress)}</span>
+                      <span>-{formatTime((duration || 0) - (isDragging ? localProgress : progress))}</span>
+                    </div>
+                  </div>
+
+                  {/* Main Controls - Shuffle, Prev, Play, Next, Repeat */}
+                  <div className={cn("flex items-center justify-between px-2 transition-all duration-300",
+                    (isLoopStartDragging || isLoopEndDragging) && "blur-sm opacity-50 pointer-events-none"
+                  )}>
+                    <button
+                      onClick={toggleShuffle}
+                      className={cn(
+                        "p-2 transition-all active:scale-90",
+                        shuffle
+                          ? "text-white"
+                          : "text-white/30"
+                      )}
+                      style={shuffle ? { filter: `drop-shadow(0 0 8px ${uiColor})` } : undefined}
+                    >
+                      <Shuffle className="h-6 w-6" />
+                    </button>
+
+                    <button
+                      onClick={prev}
+                      className="text-white/90 hover:text-white active:scale-90 transition-transform"
+                    >
+                      <SkipBack className="h-10 w-10 fill-current" />
+                    </button>
+
+                    <button
+                      onClick={togglePlay}
+                      className="w-[72px] h-[72px] rounded-full flex items-center justify-center text-white active:scale-95 transition-transform"
+                    >
+                      {isPlaying ? (
+                        <Pause className="h-[72px] w-[72px] fill-current" />
+                      ) : (
+                        <Play className="h-[72px] w-[72px] fill-current" />
+                      )}
+                    </button>
+
+                    <button
+                      onClick={next}
+                      className="text-white/90 hover:text-white active:scale-90 transition-transform"
+                    >
+                      <SkipForward className="h-10 w-10 fill-current" />
+                    </button>
+
+                    <button
+                      onClick={toggleRepeat}
+                      className={cn(
+                        "p-2 transition-all active:scale-90",
+                        repeat !== 'off'
+                          ? "text-white"
+                          : "text-white/30"
+                      )}
+                      style={repeat !== 'off' ? { filter: `drop-shadow(0 0 8px ${uiColor})` } : undefined}
+                    >
+                      {repeat === 'one' ? (
+                        <Repeat1 className="h-6 w-6" />
+                      ) : (
+                        <Repeat className="h-6 w-6" />
+                      )}
+                    </button>
+                  </div>
+
+                  <div className={cn("space-y-3 transition-all duration-300",
+                    (isLoopStartDragging || isLoopEndDragging) && "blur-sm opacity-50 pointer-events-none"
+                  )}>
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <button
+                        onClick={() => setLoopSegmentEnabled(!loopSegmentEnabled)}
+                        className={cn(
+                          "inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-xs font-semibold transition-colors",
+                          loopSegmentEnabled
+                            ? "bg-white/15 text-white border border-white/10"
+                            : "bg-white/5 text-white/70 hover:text-white"
+                        )}
+                      >
+                        <ListRestart className="w-4 h-4" />
+                        {loopSegmentEnabled ? 'Loop ON' : 'Loop OFF'}
+                      </button>
+
+                      <div className="text-sm text-white/60 font-medium tabular-nums">
+                        {loopSegmentEnabled
+                          ? `${formatTime(loopStartTime)} → ${formatTime(loopEndTime)}`
+                          : 'Loop range disabled'}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Bottom Actions: Lyrics, Airplay, List */}
+                  <div className={cn("flex justify-center pt-2 pb-2 transition-all duration-300",
+                    (isLoopStartDragging || isLoopEndDragging) && "blur-sm opacity-50 pointer-events-none"
+                  )}>
+                    <div
+                      className="
                 flex items-center justify-between gap-6
                 px-6 py-3
                 rounded-2xl
@@ -1115,63 +1115,63 @@ const ExpandedPlayerComponent = memo(({
                 border border-white/10
                 shadow-[0_8px_30px_rgba(0,0,0,0.3)]
               "
-                >
-                  <button
-                    onClick={() => setShowLyrics(!showLyrics)}
-                    className={cn(
-                      "p-3 rounded-xl transition-colors",
-                      showLyrics
-                        ? "bg-white/20 text-white"
-                        : "text-white/50 hover:text-white"
-                    )}
-                  >
-                    <Mic2 className="h-6 w-6" />
-                  </button>
-
-                  <button
-                    onClick={handleShare}
-                    className="p-3 text-white/50 hover:text-white transition-colors"
-                  >
-                    <Share2 className="h-6 w-6" />
-                  </button>
-
-                  <button
-                    onClick={handleCast}
-                    className="p-3 text-white/50 hover:text-white transition-colors"
-                  >
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      width="24"
-                      height="24"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      className="h-6 w-6"
                     >
-                      <path d="M2 16.1A5 5 0 0 1 5.9 20M2 12.05A9 9 0 0 1 9.95 20M2 8V6a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-6" />
-                      <line x1="2" x2="2.01" y1="20" y2="20" />
-                    </svg>
-                  </button>
+                      <button
+                        onClick={() => setShowLyrics(!showLyrics)}
+                        className={cn(
+                          "p-3 rounded-xl transition-colors",
+                          showLyrics
+                            ? "bg-white/20 text-white"
+                            : "text-white/50 hover:text-white"
+                        )}
+                      >
+                        <Mic2 className="h-6 w-6" />
+                      </button>
 
-                  <button
-                    onClick={() => {
-                      setShowDashboard(!showDashboard);
-                      if (!showDashboard) setShowLyrics(false);
-                    }}
-                    className={cn(
-                      "p-3 rounded-xl transition-colors",
-                      showDashboard
-                        ? "bg-white/20 text-white"
-                        : "text-white/50 hover:text-white"
-                    )}
-                  >
-                    <ListMusic className="h-6 w-6" />
-                  </button>
-                </div>
-              </div>
+                      <button
+                        onClick={handleShare}
+                        className="p-3 text-white/50 hover:text-white transition-colors"
+                      >
+                        <Share2 className="h-6 w-6" />
+                      </button>
+
+                      <button
+                        onClick={handleCast}
+                        className="p-3 text-white/50 hover:text-white transition-colors"
+                      >
+                        <svg
+                          xmlns="http://www.w3.org/2000/svg"
+                          width="24"
+                          height="24"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          className="h-6 w-6"
+                        >
+                          <path d="M2 16.1A5 5 0 0 1 5.9 20M2 12.05A9 9 0 0 1 9.95 20M2 8V6a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-6" />
+                          <line x1="2" x2="2.01" y1="20" y2="20" />
+                        </svg>
+                      </button>
+
+                      <button
+                        onClick={() => {
+                          setShowDashboard(!showDashboard);
+                          if (!showDashboard) setShowLyrics(false);
+                        }}
+                        className={cn(
+                          "p-3 rounded-xl transition-colors",
+                          showDashboard
+                            ? "bg-white/20 text-white"
+                            : "text-white/50 hover:text-white"
+                        )}
+                      >
+                        <ListMusic className="h-6 w-6" />
+                      </button>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>

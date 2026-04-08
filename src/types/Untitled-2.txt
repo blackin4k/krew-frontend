@@ -1,0 +1,6 @@
+# 
+
+
+# {title}
+{artist}
+[Open in Krew](intent://song/%7Bsong_id%7D#Intent;scheme=https;package=com.krew.music;S.browser_fallback_url=https://play.google.com/store/apps/details?id=com.krew.music;end)

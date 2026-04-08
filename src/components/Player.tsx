@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState, useMemo, memo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import Visualizer from "./Visualizer";
-import { useDominantColor } from "@/hooks/useDominantColor";
+import { useCoverPalette, useDominantColor } from "@/hooks/useDominantColor";
 import { Cast } from "lucide-react";
 import AudioDashboard from "./AudioDashboard";
 import api, { songsApi, configureJamPlayback, playlistsApi, API_URL } from "@/lib/api";
@@ -389,6 +389,7 @@ export default function Player() {
   }, [currentSong]);
 
   const domColor = useDominantColor(coverUrl);
+  const { palette } = useCoverPalette(coverUrl, 3);
 
   const baseColor = (() => {
     if (visualizerColor) return null;
@@ -402,13 +403,26 @@ export default function Player() {
     return domColor;
   })();
 
+  const paletteColors = useMemo(() => {
+    if (!palette?.length) return null;
+    // Convert palette colors to rgba stops (dimmer → brighter → punchy)
+    const [primary, accent, secondary] = palette;
+    return [
+      `rgba(${secondary.r}, ${secondary.g}, ${secondary.b}, 0.35)`,
+      `rgba(${primary.r}, ${primary.g}, ${primary.b}, 0.85)`,
+      `rgba(${accent.r}, ${accent.g}, ${accent.b}, 1)`,
+    ];
+  }, [palette]);
+
   const visualizerColors = visualizerColor
     ? [`${visualizerColor}33`, `${visualizerColor}66`, `${visualizerColor}99`]
-    : baseColor
+    : paletteColors
+      ? paletteColors
+      : baseColor
       ? [
-        `rgba(${baseColor.r}, ${baseColor.g}, ${baseColor.b}, 0.4)`,
-        `rgba(${baseColor.r}, ${baseColor.g}, ${baseColor.b}, 0.8)`,
-        `rgba(${baseColor.r}, ${baseColor.g}, ${baseColor.b}, 1)`
+        `rgba(${baseColor.r}, ${baseColor.g}, ${baseColor.b}, 0.3)`,
+        `rgba(${Math.min(baseColor.r + 40, 255)}, ${Math.min(baseColor.g + 40, 255)}, ${Math.min(baseColor.b + 40, 255)}, 0.8)`,
+        `rgba(${Math.max(baseColor.r - 40, 0)}, ${Math.max(baseColor.g - 40, 0)}, ${Math.max(baseColor.b - 40, 0)}, 1)`
       ]
       : undefined;
 
@@ -768,59 +782,75 @@ const ExpandedPlayerComponent = memo(({
           )}
 
           {/* CONTENT CONTAINER - Flex Column */}
-          <div className="relative z-20 flex flex-col h-full w-full px-6 pt-4 pb-4">
+          <div
+            className="
+              relative z-20 flex flex-col h-full min-h-0 w-full
+              px-4 sm:px-6
+              pt-4
+              pb-[calc(1rem+env(safe-area-inset-bottom))]
+            "
+          >
 
             {/* 1. TOP BAR - Drag Handle Only */}
-            <div className={cn("flex items-center justify-center h-8 shrink-0 w-full mt-2 mb-2 transition-all duration-300", 
+            <div className={cn("flex items-center justify-center h-8 shrink-0 w-full transition-all duration-300",
               (isLoopStartDragging || isLoopEndDragging) && "blur-sm opacity-50 pointer-events-none"
             )}>
               <div className="w-10 h-1 rounded-full bg-white/20" />
             </div>
 
-            {/* 2. ARTWORK */}
-            <div className={cn("flex items-center justify-center min-h-0 pt-4 pb-4 relative transition-all duration-300",
-              (isLoopStartDragging || isLoopEndDragging) && "blur-md opacity-40 pointer-events-none"
-            )}>
-              <motion.div
-                className="relative aspect-square w-full max-w-[340px] max-h-[60vh] rounded-[18px] z-10"
-                style={{
-                  boxShadow: `0 10px 40px -10px ${uiColor}50`
-                }}
-                animate={{
-                  scale: isPlaying ? 1.02 : 1,
-                }}
-                transition={{
-                  duration: 0.5,
-                  ease: "easeOut"
-                }}
-              >
-                <div className="absolute inset-0 rounded-[18px] overflow-hidden bg-[#282828] border border-white/5">
-                  {coverUrl ? (
-                    <img
-                      src={coverUrl}
-                      alt={currentSong.title}
-                      className="w-full h-full object-cover"
-                      draggable={false}
-                    />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center text-6xl text-white/20">♪</div>
-                  )}
-                </div>
-              </motion.div>
-            </div>
+            {/* Scrollable main content (only when space is tight) */}
+            <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain">
+              <div className="w-full min-h-0 flex flex-col items-center gap-6 sm:gap-8 py-3">
 
-            {/* 3. TRACK INFO & CONTROLS */}
-            <div className="shrink-0 flex flex-col mt-12">
+                {/* 2. ARTWORK */}
+                <div className={cn("w-full flex items-center justify-center min-h-0 relative transition-all duration-300",
+                  (isLoopStartDragging || isLoopEndDragging) && "blur-md opacity-40 pointer-events-none"
+                )}>
+                  <motion.div
+                    className="
+                      relative aspect-square w-full
+                      max-w-[280px] sm:max-w-[320px] md:max-w-[360px] lg:max-w-[380px] xl:max-w-[420px]
+                      max-h-[50vh]
+                      rounded-[18px] z-10
+                    "
+                    style={{
+                      boxShadow: `0 10px 40px -10px ${uiColor}50`
+                    }}
+                    animate={{
+                      scale: isPlaying ? 1.02 : 1,
+                    }}
+                    transition={{
+                      duration: 0.5,
+                      ease: "easeOut"
+                    }}
+                  >
+                    <div className="absolute inset-0 rounded-[18px] overflow-hidden bg-[#282828] border border-white/5">
+                      {coverUrl ? (
+                        <img
+                          src={coverUrl}
+                          alt={currentSong.title}
+                          className="w-full h-full object-cover"
+                          draggable={false}
+                        />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center text-6xl text-white/20">♪</div>
+                      )}
+                    </div>
+                  </motion.div>
+                </div>
+
+                {/* 3. TRACK INFO & CONTROLS */}
+                <div className="w-full max-w-[560px] shrink-0 flex flex-col gap-5 sm:gap-6">
 
               {/* Title & More Button Row */}
-              <div className={cn("flex items-center justify-between mb-6 px-1 transition-all duration-300",
+              <div className={cn("flex items-center justify-between px-1 transition-all duration-300",
                 (isLoopStartDragging || isLoopEndDragging) && "blur-sm opacity-50 pointer-events-none"
               )}>
-                <div className="flex flex-col text-left overflow-hidden mr-4">
-                  <h2 className="text-[22px] font-bold text-white truncate leading-tight tracking-tight mb-1">
+                <div className="flex flex-col text-left overflow-hidden mr-4 min-w-0 flex-1">
+                  <h2 className="text-[20px] sm:text-[22px] font-bold text-white truncate leading-tight tracking-tight">
                     {currentSong.title}
                   </h2>
-                  <p className="text-[18px] text-white/60 truncate font-medium">
+                  <p className="text-[16px] sm:text-[18px] text-white/60 truncate font-medium mt-1">
                     {currentSong.artist}
                   </p>
                 </div>
@@ -859,7 +889,7 @@ const ExpandedPlayerComponent = memo(({
               </div>
 
               {/* Progress - White Bar & Loop Track */}
-              <div className="mb-10 mt-2 relative z-30">
+              <div className="relative z-30">
                 <div
                   ref={progressBarRef}
                   className="relative h-10 flex flex-col justify-center group touch-none"
@@ -984,7 +1014,7 @@ const ExpandedPlayerComponent = memo(({
               </div>
 
               {/* Main Controls - Shuffle, Prev, Play, Next, Repeat */}
-              <div className={cn("flex items-center justify-between mb-10 px-2 transition-all duration-300",
+              <div className={cn("flex items-center justify-between px-2 transition-all duration-300",
                 (isLoopStartDragging || isLoopEndDragging) && "blur-sm opacity-50 pointer-events-none"
               )}>
                 <button
@@ -1043,7 +1073,7 @@ const ExpandedPlayerComponent = memo(({
                 </button>
               </div>
 
-              <div className={cn("mb-4 space-y-3 transition-all duration-300",
+              <div className={cn("space-y-3 transition-all duration-300",
                 (isLoopStartDragging || isLoopEndDragging) && "blur-sm opacity-50 pointer-events-none"
               )}>
                 <div className="flex flex-wrap items-center justify-between gap-3">
@@ -1069,7 +1099,7 @@ const ExpandedPlayerComponent = memo(({
               </div>
 
               {/* Bottom Actions: Lyrics, Airplay, List */}
-              <div className={cn("flex justify-center pt-4 pb-4 transition-all duration-300",
+              <div className={cn("flex justify-center pt-2 pb-2 transition-all duration-300",
                 (isLoopStartDragging || isLoopEndDragging) && "blur-sm opacity-50 pointer-events-none"
               )}>
                 <div
@@ -1136,6 +1166,8 @@ const ExpandedPlayerComponent = memo(({
                   >
                     <ListMusic className="h-6 w-6" />
                   </button>
+                </div>
+              </div>
                 </div>
               </div>
             </div>

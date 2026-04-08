@@ -206,7 +206,28 @@ export default function Visualizer({
                     const bass = dataArray.slice(0, 10).reduce((a, b) => a + b, 0) / 10;
                     const scale = bass / 255;
 
+                    // Smooth interpolation (reduce jitter)
+                    for (let i = 1; i < dataArray.length; i++) {
+                        dataArray[i] = (dataArray[i] + dataArray[i - 1]) / 2;
+                    }
+
+                    // Color reacts to intensity
+                    const intensity = dataArray.reduce((a, b) => a + b, 0) / dataArray.length;
+                    ctx.filter = `brightness(${1 + intensity / 200})`;
+
+                    // Bass reactive zoom + alpha pulse
+                    ctx.globalAlpha = 0.6 + scale * 0.6;
+                    ctx.save();
+                    ctx.translate(width / 2, height / 2);
+                    const zoom = 1 + scale * 0.03;
+                    ctx.scale(zoom, zoom);
+                    ctx.translate(-width / 2, -height / 2);
+
                     const drawWave = (colorStr: string, offset: number, speed: number, amplitude: number) => {
+                        ctx.save();
+                        ctx.shadowBlur = 30;
+                        ctx.shadowColor = colorStr;
+
                         ctx.beginPath();
                         ctx.moveTo(0, height);
 
@@ -258,11 +279,18 @@ export default function Visualizer({
 
                         ctx.fillStyle = gradient;
                         ctx.fill();
+                        ctx.restore();
                     };
 
+                    // Motion depth (parallax): add a background wave behind everything
+                    drawWave(colors[0], 0.35, 0.0004, 40 + scale * 40);
                     drawWave(colors[0], 0.25, 0.0008, 30 + scale * 30);
                     drawWave(colors[1], 0.18, 0.0015, 25 + scale * 25);
                     drawWave(colors[2], 0.12, 0.0025, 15 + scale * 30);
+
+                    ctx.restore(); // zoom transform
+                    ctx.filter = 'none';
+                    ctx.globalAlpha = 1;
                 }
 
                 // Fade bottom to remove hard edge

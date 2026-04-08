@@ -840,7 +840,7 @@ const ExpandedPlayerComponent = memo(({
                 </div>
 
                 {/* 3. TRACK INFO & CONTROLS */}
-                <div className="w-full max-w-[560px] shrink-0 flex flex-col gap-5 sm:gap-6">
+                <div className="w-full max-w-[420px] shrink-0 flex flex-col gap-5 sm:gap-6">
 
               {/* Title & More Button Row */}
               <div className={cn("flex items-center justify-between px-1 transition-all duration-300",

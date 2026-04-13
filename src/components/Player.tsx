@@ -692,7 +692,7 @@ const ExpandedPlayerComponent = memo(({
               setExpanded(false);
             }
           }}
-          className="fixed inset-0 z-50 flex flex-col bg-[#050505] pt-safe"
+          className="fixed inset-0 z-50 flex h-[100dvh] max-h-[100dvh] flex-col overflow-hidden bg-[#050505]"
         >
           {/* BACKGROUND - Blurred Cover Image */}
           <div className="absolute inset-0 overflow-hidden pointer-events-none">
@@ -803,23 +803,31 @@ const ExpandedPlayerComponent = memo(({
           {/* CONTENT CONTAINER - Flex Column */}
           <div
             className="
-              relative z-20 flex flex-col h-full min-h-0 w-full
+              relative z-20 mx-auto flex h-full min-h-0 w-full max-w-[460px] flex-col
               px-4 sm:px-6
-              pt-4
-              pb-[calc(1rem+env(safe-area-inset-bottom))]
+              pt-[calc(0.75rem+env(safe-area-inset-top))]
+              pb-[calc(1.25rem+env(safe-area-inset-bottom))]
             "
           >
 
-            {/* 1. TOP BAR - Drag Handle Only */}
-            <div className={cn("flex items-center justify-center h-8 shrink-0 w-full transition-all duration-300",
+            {/* 1. TOP BAR */}
+            <div className={cn("flex items-center justify-between h-10 shrink-0 w-full transition-all duration-300",
               (isLoopStartDragging || isLoopEndDragging) && "blur-sm opacity-50 pointer-events-none"
             )}>
+              <div className="w-10" />
               <div className="w-10 h-1 rounded-full bg-white/20" />
+              <button
+                onClick={() => setExpanded(false)}
+                className="flex h-10 w-10 items-center justify-center rounded-full bg-white/5 text-white/80 transition-colors hover:bg-white/10 hover:text-white"
+                aria-label="Collapse player"
+              >
+                <ChevronDown className="h-5 w-5" />
+              </button>
             </div>
 
-            {/* Scrollable main content (only when space is tight) */}
-            <div className="flex-1 min-h-0 overflow-hidden">
-              <div className="w-full min-h-0 flex flex-col items-center gap-6 sm:gap-8 py-3">
+            {/* Scrollable main content */}
+            <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain no-scrollbar">
+              <div className="mx-auto flex min-h-full w-full flex-col items-center gap-4 py-2 pb-6 sm:gap-5">
 
                 {/* 2. ARTWORK */}
                 <div className={cn("w-full flex items-center justify-center min-h-0 relative transition-all duration-300",
@@ -827,10 +835,8 @@ const ExpandedPlayerComponent = memo(({
                 )}>
                   <motion.div
                     className="
-                      relative aspect-square w-full
-                      max-w-[280px] sm:max-w-[320px] md:max-w-[360px] lg:max-w-[380px] xl:max-w-[420px]
-                      max-h-[50vh]
-                      rounded-[18px] z-10
+                      relative z-10 aspect-square w-[clamp(220px,72vw,340px)] max-w-full rounded-[22px]
+                      sm:w-[clamp(240px,64vw,380px)]
                     "
                     style={{
                       boxShadow: `0 10px 40px -10px ${uiColor}50`
@@ -843,7 +849,7 @@ const ExpandedPlayerComponent = memo(({
                       ease: "easeOut"
                     }}
                   >
-                    <div className="absolute inset-0 rounded-[18px] overflow-hidden bg-[#282828] border border-white/5">
+                    <div className="absolute inset-0 overflow-hidden rounded-[22px] bg-[#282828] border border-white/5">
                       {coverUrl ? (
                         <img
                           src={coverUrl}
@@ -859,17 +865,17 @@ const ExpandedPlayerComponent = memo(({
                 </div>
 
                 {/* 3. TRACK INFO & CONTROLS */}
-                <div className="w-full max-w-[420px] shrink-0 flex flex-col gap-5 sm:gap-6">
+                <div className="w-full max-w-[420px] shrink-0 flex flex-col gap-4 sm:gap-5">
 
                   {/* Title & More Button Row */}
                   <div className={cn("flex items-center justify-between px-1 transition-all duration-300",
                     (isLoopStartDragging || isLoopEndDragging) && "blur-sm opacity-50 pointer-events-none"
                   )}>
                     <div className="flex flex-col text-left overflow-hidden mr-4 min-w-0 flex-1">
-                      <h2 className="text-[20px] sm:text-[22px] font-bold text-white truncate leading-tight tracking-tight">
+                      <h2 className="text-[clamp(1.15rem,4.8vw,1.6rem)] font-bold text-white truncate leading-tight tracking-tight">
                         {currentSong.title}
                       </h2>
-                      <p className="text-[16px] sm:text-[18px] text-white/60 truncate font-medium mt-1">
+                      <p className="mt-1 text-[clamp(0.95rem,3.8vw,1.1rem)] text-white/60 truncate font-medium">
                         {currentSong.artist}
                       </p>
                     </div>
@@ -1037,7 +1043,7 @@ const ExpandedPlayerComponent = memo(({
                   </div>
 
                   {/* Main Controls - Shuffle, Prev, Play, Next, Repeat */}
-                  <div className={cn("flex items-center justify-between px-2 transition-all duration-300",
+                  <div className={cn("flex items-center justify-between px-1 sm:px-2 transition-all duration-300",
                     (isLoopStartDragging || isLoopEndDragging) && "blur-sm opacity-50 pointer-events-none"
                   )}>
                     <button
@@ -1055,27 +1061,27 @@ const ExpandedPlayerComponent = memo(({
 
                     <button
                       onClick={prev}
-                      className="text-white/90 hover:text-white active:scale-90 transition-transform"
+                      className="rounded-full p-2 text-white/90 transition-transform hover:text-white active:scale-90"
                     >
-                      <SkipBack className="h-10 w-10 fill-current" />
+                      <SkipBack className="h-9 w-9 fill-current sm:h-10 sm:w-10" />
                     </button>
 
                     <button
                       onClick={togglePlay}
-                      className="w-[72px] h-[72px] rounded-full flex items-center justify-center text-white active:scale-95 transition-transform"
+                      className="flex h-16 w-16 items-center justify-center rounded-full bg-white text-black shadow-[0_10px_30px_rgba(255,255,255,0.18)] transition-transform active:scale-95 sm:h-[72px] sm:w-[72px]"
                     >
                       {isPlaying ? (
-                        <Pause className="h-[72px] w-[72px] fill-current" />
+                        <Pause className="h-8 w-8 fill-current sm:h-9 sm:w-9" />
                       ) : (
-                        <Play className="h-[72px] w-[72px] fill-current" />
+                        <Play className="ml-1 h-8 w-8 fill-current sm:h-9 sm:w-9" />
                       )}
                     </button>
 
                     <button
                       onClick={next}
-                      className="text-white/90 hover:text-white active:scale-90 transition-transform"
+                      className="rounded-full p-2 text-white/90 transition-transform hover:text-white active:scale-90"
                     >
-                      <SkipForward className="h-10 w-10 fill-current" />
+                      <SkipForward className="h-9 w-9 fill-current sm:h-10 sm:w-10" />
                     </button>
 
                     <button

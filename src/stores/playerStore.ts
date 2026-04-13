@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { songsApi, playerApi, radioApi, API_URL } from '@/lib/api';
+import { playerApi, radioApi, API_URL } from '@/lib/api';
 import { normalizeQueueResponse } from '@/lib/queue';
 import { toast } from 'sonner';
 import { useOfflineStore } from './offlineStore';
@@ -724,10 +724,17 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       if (offlineSong.local && offlineSong.filePath) {
         audio.src = Capacitor.isNativePlatform()
           ? Capacitor.convertFileSrc(offlineSong.filePath)
-          : (data.audio || songsApi.stream(song.id));
+          : offlineSong.filePath;
       } else {
-        audio.src = data.audio || songsApi.stream(song.id);
+        if (!data.audio) {
+          console.error("Missing audio URL", song.id);
+          set({ isPlaying: false, isLoadingNext: false });
+          return;
+        }
+        audio.src = data.audio;
       }
+
+      console.log("AUDIO SRC:", audio.src);
 
       audio.load();
 
@@ -939,7 +946,13 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       incomingAudio.playbackRate = 1.0;
     }
 
-    incomingAudio.src = nextSong.audio as string;
+    if (!nextSong.audio) {
+      console.error("Missing audio for crossfade", nextSong.id);
+      set({ _isCrossfading: false });
+      return;
+    }
+
+    incomingAudio.src = nextSong.audio;
     incomingAudio.load();
     if (incomingGain) incomingGain.gain.setValueAtTime(0, ctx.currentTime);
 

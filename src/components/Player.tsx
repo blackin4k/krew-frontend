@@ -4,7 +4,7 @@ import Visualizer from "./Visualizer";
 import { useCoverPalette, useDominantColor } from "@/hooks/useDominantColor";
 import { Cast } from "lucide-react";
 import AudioDashboard from "./AudioDashboard";
-import api, { songsApi, configureJamPlayback, playlistsApi, API_URL } from "@/lib/api";
+import api, { configureJamPlayback, playlistsApi, API_URL } from "@/lib/api";
 import {
   Play,
   Pause,
@@ -361,7 +361,26 @@ export default function Player() {
   useEffect(() => {
     configureJamPlayback({
       getAudio: () => usePlayerStore.getState().audio,
-      getSrcForSong: (songId: number) => songsApi.stream(songId),
+      getSrcForSong: (songId: number) => {
+        const downloadedSong = useOfflineStore.getState().downloadedSongs.find((song) => song.id === songId);
+        if (downloadedSong?.local && downloadedSong.filePath) {
+          return Capacitor.isNativePlatform()
+            ? Capacitor.convertFileSrc(downloadedSong.filePath)
+            : downloadedSong.filePath;
+        }
+
+        const { currentSong, queue } = usePlayerStore.getState();
+        const matchedSong = currentSong?.id === songId
+          ? currentSong
+          : queue.find((song) => song.id === songId);
+
+        if (!matchedSong?.audio) {
+          console.error("Missing audio URL", songId);
+          return "";
+        }
+
+        return matchedSong.audio;
+      },
     });
   }, []);
 

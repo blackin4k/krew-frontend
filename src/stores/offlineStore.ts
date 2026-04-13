@@ -3,7 +3,7 @@ import { persist } from 'zustand/middleware';
 import { Filesystem, Directory } from '@capacitor/filesystem';
 import { Song } from './playerStore';
 import { toast } from 'sonner';
-import { songsApi, API_URL } from '@/lib/api';
+import { playerApi, API_URL } from '@/lib/api';
 
 const blobToBase64 = (blob: Blob): Promise<string> => {
   return new Promise((resolve, reject) => {
@@ -51,8 +51,11 @@ export const useOfflineStore = create<OfflineState>()(
 
         try {
           // Phase 2: Capacitor Real File System Download
-          const streamUrl = await songsApi.stream(song.id);
-          const response = await fetch(streamUrl);
+          const audioUrl = song.audio || (await playerApi.play(song.id)).data?.audio;
+          if (!audioUrl) {
+            throw new Error(`Missing audio URL for song ${song.id}`);
+          }
+          const response = await fetch(audioUrl);
           
           if (!response.ok) throw new Error('Download stream failed');
           

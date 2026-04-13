@@ -1020,10 +1020,11 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       return;
     }
 
-    if (get().isPlaying) {
-      get()._logDuration();
-      set({ isPlaying: false, isLoadingNext: false, lastPlayStart: 0 });
+    const currentlyPlaying = !audio.paused && !audio.ended;
+
+    if (currentlyPlaying) {
       audio.pause();
+      set({ isPlaying: false, isLoadingNext: false, lastPlayStart: 0 });
       get().setIdleTimeout();
       return;
     }
@@ -1037,9 +1038,8 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
 
   pause: () => {
     const audio = get()._activeAudio === 'A' ? get()._audioA : get()._audioB;
-    get()._logDuration();
-    set({ isPlaying: false, isLoadingNext: false, lastPlayStart: 0 });
     audio?.pause();
+    set({ isPlaying: false, isLoadingNext: false, lastPlayStart: 0 });
     get().setIdleTimeout();
   },
 

@@ -113,24 +113,29 @@ export default function Visualizer({
 
                     analyser.getByteFrequencyData(analyserDataRef.current as any);
 
-                    let peak = 0;
-                    for (let i = 0; i < analyserDataRef.current.length; i++) {
-                        if (analyserDataRef.current[i] > peak) {
-                            peak = analyserDataRef.current[i];
-                        }
-                    }
-
-                    if (peak > 0 || !isPlaying) {
+                    if (!isPlaying) {
                         silentFramesRef.current = 0;
-                        dataArray = analyserDataRef.current;
+                        energyRef.current += (0 - energyRef.current) * 0.18;
+                        dataArray = generateSimulatedData(bufferLength, energyRef.current);
                     } else {
-                        silentFramesRef.current += 1;
-                        if (silentFramesRef.current <= 20) {
+                        let peak = 0;
+                        for (let i = 0; i < analyserDataRef.current.length; i++) {
+                            if (analyserDataRef.current[i] > peak) {
+                                peak = analyserDataRef.current[i];
+                            }
+                        }
+
+                        if (peak > 0) {
+                            silentFramesRef.current = 0;
                             dataArray = analyserDataRef.current;
                         } else {
-                            const targetEnergy = isPlaying ? 1 : 0;
-                            energyRef.current += (targetEnergy - energyRef.current) * 0.05;
-                            dataArray = generateSimulatedData(bufferLength, energyRef.current);
+                            silentFramesRef.current += 1;
+                            if (silentFramesRef.current <= 20) {
+                                dataArray = analyserDataRef.current;
+                            } else {
+                                energyRef.current += (1 - energyRef.current) * 0.05;
+                                dataArray = generateSimulatedData(bufferLength, energyRef.current);
+                            }
                         }
                     }
                 } else {

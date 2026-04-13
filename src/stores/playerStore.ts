@@ -1020,14 +1020,27 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       return;
     }
 
-    if (get().isPlaying) audio.pause();
-    else audio.play();
+    if (get().isPlaying) {
+      get()._logDuration();
+      set({ isPlaying: false, isLoadingNext: false, lastPlayStart: 0 });
+      audio.pause();
+      get().setIdleTimeout();
+      return;
+    }
+
+    audio.play().catch((e) => {
+      console.error("Resume failed", e);
+      set({ isPlaying: false });
+      toast.error("Playback failed. Try again.");
+    });
   },
 
   pause: () => {
     const audio = get()._activeAudio === 'A' ? get()._audioA : get()._audioB;
+    get()._logDuration();
+    set({ isPlaying: false, isLoadingNext: false, lastPlayStart: 0 });
     audio?.pause();
-    set({ isPlaying: false });
+    get().setIdleTimeout();
   },
 
   resume: () => {
@@ -1040,8 +1053,11 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       }
       return;
     }
-    audio.play();
-    set({ isPlaying: true });
+    audio.play().catch((e) => {
+      console.error("Resume failed", e);
+      set({ isPlaying: false });
+      toast.error("Playback failed. Try again.");
+    });
   },
 
   next: async () => {

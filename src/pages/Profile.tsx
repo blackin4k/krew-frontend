@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input';
 import { ChevronLeft, ChevronRight, Mail, Lock, Clock, Activity, TrendingUp, Music, Headphones, Sparkles } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { API_URL } from '@/lib/api';
+import { userApi } from '@/lib/api';
 import {
   Dialog,
   DialogContent,
@@ -28,6 +28,7 @@ const Profile = () => {
     const user = useAuthStore(state => state.user);
     const [passwords, setPasswords] = useState({ current: '', new: '', confirm: '' });
     const [stats, setStats] = useState<UserStats | null>(null);
+    const [statsLoading, setStatsLoading] = useState(true);
     const [isEditing, setIsEditing] = useState(false);
     const [pwdDialogOpen, setPwdDialogOpen] = useState(false);
     const { toast } = useToast();
@@ -35,20 +36,22 @@ const Profile = () => {
     useEffect(() => {
         const loadStats = async () => {
             try {
-                const token = localStorage.getItem('token');
-                const res = await fetch(`${API_URL}/user-stats`, {
-                    headers: { 'Authorization': `Bearer ${token}` }
-                });
-                if (res.ok) {
-                    const data = await res.json();
-                    setStats(data);
-                }
+                const res = await userApi.getStats();
+                setStats(res.data);
             } catch (e) {
                 console.error("Failed to fetch stats", e);
+                setStats(null);
+                toast({
+                    title: 'Failed to load data',
+                    description: 'Could not load your profile stats.',
+                    variant: 'destructive',
+                });
+            } finally {
+                setStatsLoading(false);
             }
         };
         loadStats();
-    }, []);
+    }, [toast]);
 
     const handleChangePassword = () => {
         toast({ title: 'Password changed successfully!' });
@@ -195,7 +198,11 @@ const Profile = () => {
                             </div>
                             <Music className="w-4 h-4 text-[#9CA3AF] opacity-50" />
                         </div>
-                    )) : (
+                    )) : statsLoading ? (
+                        <div className="text-center text-[#9CA3AF] py-6 bg-[#151518] rounded-[20px] border border-white/5">
+                            Loading activity...
+                        </div>
+                    ) : (
                         <div className="text-center text-[#9CA3AF] py-6 bg-[#151518] rounded-[20px] border border-white/5">
                             No recent activity
                         </div>

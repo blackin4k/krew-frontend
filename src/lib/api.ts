@@ -1,12 +1,47 @@
-import axios from 'axios';
+import axios, { type AxiosResponse } from 'axios';
 import { usePlayerStore } from "@/stores/playerStore";
 import { toast } from "sonner";
 import { createRetryableRequest } from "./retryHandler";
 import { offlineCache } from "./offlineCache";
 
 
-// Production API URL
-const API_URL = 'https://api.kreewaux.xyz';
+// Production default with local/env override support
+const API_URL = import.meta.env.VITE_API_URL || 'https://api.kreewaux.xyz';
+const DEBUG_API = import.meta.env.DEV || import.meta.env.VITE_DEBUG_API === 'true';
+const TOKEN_STORAGE_KEY = 'token';
+const AUTH_STORAGE_KEY = 'auth-storage';
+
+function getStoredToken() {
+  return localStorage.getItem(TOKEN_STORAGE_KEY);
+}
+
+function clearStoredAuth() {
+  localStorage.removeItem(TOKEN_STORAGE_KEY);
+  localStorage.removeItem(AUTH_STORAGE_KEY);
+}
+
+function getHeadersForLog(headers: unknown) {
+  if (headers && typeof headers === 'object' && 'toJSON' in headers && typeof (headers as any).toJSON === 'function') {
+    return (headers as any).toJSON();
+  }
+  return headers;
+}
+
+function isObject(value: unknown): value is Record<string, any> {
+  return typeof value === 'object' && value !== null;
+}
+
+function validateResponse<T>(
+  response: AxiosResponse<T>,
+  isValid: (data: T) => boolean,
+  message: string
+) {
+  console.log("API RESPONSE:", response.data);
+  if (!isValid(response.data)) {
+    throw new Error(message);
+  }
+  return response;
+}
 
 const api = axios.create({
   baseURL: API_URL,
@@ -16,21 +51,51 @@ const api = axios.create({
 
 // Add token and ngrok bypass header to requests
 api.interceptors.request.use((config) => {
-  const token = localStorage.getItem('token');
+  const token = getStoredToken();
+  config.headers = config.headers ?? {};
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
   // Bypass ngrok browser warning page
   config.headers['ngrok-skip-browser-warning'] = 'true';
+
+  if (DEBUG_API) {
+    console.log("API REQUEST:", {
+      method: config.method?.toUpperCase(),
+      url: `${config.baseURL || ''}${config.url || ''}`,
+      headers: getHeadersForLog(config.headers),
+      params: config.params,
+      data: config.data,
+    });
+  }
+
   return config;
 });
 
 // Response interceptor for 401 and connection error handling
 api.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    if (DEBUG_API) {
+      console.log("API RESPONSE META:", {
+        status: response.status,
+        url: `${response.config.baseURL || ''}${response.config.url || ''}`,
+        headers: response.headers,
+      });
+      console.log("API RESPONSE:", response.data);
+    }
+    return response;
+  },
   async (error) => {
     // Determine if this is a network/connectivity error
     const isNetworkError = !error.response && error.code !== 'ECONNABORTED';
+    const status = error.response?.status;
+    const data = error.response?.data;
+
+    console.error("API ERROR:", status, data, {
+      url: `${error.config?.baseURL || ''}${error.config?.url || ''}`,
+      method: error.config?.method?.toUpperCase(),
+      headers: getHeadersForLog(error.config?.headers),
+    });
 
     if (isNetworkError) {
       // Notify the user gently
@@ -39,13 +104,16 @@ api.interceptors.response.use(
       });
     }
 
-    if (error.response?.status === 401) {
-      localStorage.removeItem('token');
-      window.location.href = '/auth';
+    if (status === 401) {
+      clearStoredAuth();
+      toast.error('Session expired. Please sign in again.');
+      if (window.location.pathname !== '/auth') {
+        window.location.assign('/auth');
+      }
     }
 
     // For retryable errors, use retry handler
-    if (isNetworkError || [408, 429, 500, 502, 503, 504].includes(error.response?.status)) {
+    if (isNetworkError || [408, 429, 500, 502, 503, 504].includes(status)) {
       // The retry will be handled by the calling code using createRetryableRequest
     }
 
@@ -96,8 +164,22 @@ export const songsApi = {
 
 // Player
 export const playerApi = {
-  play: (songId: number) => api.post('/player/play', { song_id: songId }),
-  next: () => api.post('/player/next'),
+  play: async (songId: number) => {
+    const response = await api.post('/player/play', { song_id: songId });
+    return validateResponse(
+      response,
+      (data) => isObject(data) && typeof data.audio === 'string' && data.audio.length > 0,
+      'Invalid backend response from /player/play'
+    );
+  },
+  next: async () => {
+    const response = await api.post('/player/next');
+    return validateResponse(
+      response,
+      (data) => isObject(data) && typeof data.audio === 'string' && data.audio.length > 0,
+      'Invalid backend response from /player/next'
+    );
+  },
   prev: () => api.post('/player/prev'),
   shuffle: (enabled: boolean) => api.post('/player/shuffle', { enabled }),
   repeat: (mode: 'off' | 'all' | 'one') => api.post('/player/repeat', { mode }),
@@ -109,6 +191,17 @@ export const playerApi = {
   getHistory: () => api.get('/player/history'),
   smartShuffle: () => api.post('/player/smart-shuffle'),
   recordPlay: (songId: number) => api.post('/player/record-play', { song_id: songId }),
+};
+
+export const userApi = {
+  getStats: async () => {
+    const response = await api.get('/user-stats');
+    return validateResponse(
+      response,
+      (data) => isObject(data),
+      'Invalid backend response from /user-stats'
+    );
+  },
 };
 
 // Library

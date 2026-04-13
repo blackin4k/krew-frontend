@@ -711,7 +711,10 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
             return;
         }
         const response = await playerApi.play(song.id);
-        data = response.data || { audio: '', cover: '' };
+        data = {
+          audio: response.data?.audio ?? '',
+          cover: response.data?.cover ?? '',
+        };
       }
 
       if (activeGain && oppositeGain) {
@@ -728,6 +731,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       } else {
         if (!data.audio) {
           console.error("Missing audio URL", song.id);
+          toast.error("This song is unavailable right now");
           set({ isPlaying: false, isLoadingNext: false });
           return;
         }
@@ -846,7 +850,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       }
       console.error('Play failed', e);
       set({ isPlaying: false }); // safe to set false now — playback genuinely failed
-      toast.error(`Playback failed: ${e.message || 'Unknown error'}`);
+      toast.error("Playback failed. Try another song.");
     }
   },
 
@@ -896,16 +900,26 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     let nextSong: Song | null = null;
     try {
       const res = await playerApi.next();
-      if (res.data && res.data.id) {
-        nextSong = { id: res.data.id, title: res.data.title, artist: res.data.artist, cover: res.data.cover || null, audio: res.data.audio };
-        const localQueueIndex = state.queue.findIndex((song) => song.id === res.data.id);
+      const payload = res.data;
+      if (payload?.id) {
+        nextSong = {
+          id: payload.id,
+          title: payload.title,
+          artist: payload.artist,
+          cover: payload.cover ?? null,
+          audio: payload.audio ?? undefined
+        };
+        const localQueueIndex = state.queue.findIndex((song) => song.id === payload.id);
         if (localQueueIndex >= 0) {
           const remainingQueue = [...state.queue];
           remainingQueue.splice(localQueueIndex, 1);
           set({ queue: remainingQueue });
         }
       }
-    } catch (e) { console.error("Crossfade: next fetch failed", e); }
+    } catch (e) {
+      console.error("Crossfade: next fetch failed", e);
+      toast.error("Failed to load data");
+    }
 
     if (!nextSong) { set({ _isCrossfading: false }); return; }
 
@@ -948,6 +962,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
 
     if (!nextSong.audio) {
       console.error("Missing audio for crossfade", nextSong.id);
+      toast.error("Next song failed to load");
       set({ _isCrossfading: false });
       return;
     }
@@ -1155,20 +1170,17 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       set({ queue });
     } catch (e) {
       console.error('Failed to hydrate queue', e);
+      set({ queue: [] });
+      toast.error('Failed to load data');
     }
   },
 
 
 
   recordPlay: async () => {
-    const { currentSong } = get();
-    if (currentSong) {
-      playerApi.recordPlay(currentSong.id).catch((e) => {
-        console.error("Record Play Failed", e);
-        const errMsg = e.response ? `Status ${e.response.status}` : `Err: ${e.message} ${JSON.stringify(e)}`;
-        toast.error(`Sync Fail: ${errMsg}`);
-      });
-    }
+    // Playback analytics are seeded by /player/play and finalized by
+    // _logDuration() via /songs/:id/played, so this remains a no-op
+    // to avoid duplicate zero-duration rows in Sound Capsule stats.
   },
 
   playRadio: async (seedSongId: number) => {

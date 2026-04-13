@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Music2, Clock, Mic2, Disc3, Sparkles } from 'lucide-react';
 import { capsuleApi } from '@/lib/api';
+import { toast } from 'sonner';
 
 interface CapsuleStats {
     total_minutes: number;
@@ -17,7 +18,10 @@ const CapsulePage = () => {
     useEffect(() => {
         capsuleApi.getStats()
             .then((res) => setStats(res.data))
-            .catch((err) => console.error(err))
+            .catch((err) => {
+                console.error(err);
+                toast.error('Failed to load sound capsule');
+            })
             .finally(() => setLoading(false));
     }, []);
 

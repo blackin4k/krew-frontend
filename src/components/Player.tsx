@@ -2,10 +2,10 @@ import React, { useEffect, useRef, useState, useMemo, memo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import Visualizer from "./Visualizer";
 import { useCoverPalette, useDominantColor } from "@/hooks/useDominantColor";
-import { Cast } from "lucide-react";
 import AudioDashboard from "./AudioDashboard";
 import api, { configureJamPlayback, playlistsApi, API_URL } from "@/lib/api";
 import {
+  Cast,
   Play,
   Pause,
   SkipBack,
@@ -64,6 +64,12 @@ import {
 } from "@/components/ui/sheet"
 import { toast } from "sonner"
 import { Capacitor } from "@capacitor/core";
+
+type CastWindow = Window & {
+  cast?: any;
+  chrome?: any;
+  __onGCastApiAvailable?: ((isAvailable: boolean) => void) | undefined;
+};
 
 const formatTime = (seconds: number) => {
   if (!seconds || isNaN(seconds)) return "0:00"
@@ -326,6 +332,8 @@ export default function Player() {
   const [visualizerMode, setVisualizerMode] = useState<'wave' | 'bar' | 'circle'>('wave')
   const [showVisualizer, setShowVisualizer] = useState(true)
   const [optionsOpen, setOptionsOpen] = useState(false);
+  const [isCastReady, setIsCastReady] = useState(false)
+  const castInitializedRef = useRef(false)
 
   // Segment Loop dragging
   const [isLoopStartDragging, setIsLoopStartDragging] = useState(false)
@@ -455,6 +463,46 @@ export default function Player() {
       .catch(() => setLiked(false))
   }, [currentSong])
 
+  useEffect(() => {
+    if (typeof window === "undefined" || Capacitor.getPlatform() !== "web") return
+
+    const castWindow = window as CastWindow
+
+    const initializeCast = () => {
+      if (castInitializedRef.current || !castWindow.cast?.framework || !castWindow.chrome?.cast?.media) {
+        return
+      }
+
+      castWindow.cast.framework.CastContext.getInstance().setOptions({
+        receiverApplicationId: castWindow.chrome.cast.media.DEFAULT_MEDIA_RECEIVER_APP_ID,
+        autoJoinPolicy: castWindow.chrome.cast.AutoJoinPolicy.ORIGIN_SCOPED,
+      })
+
+      castInitializedRef.current = true
+      setIsCastReady(true)
+    }
+
+    if (castWindow.cast?.framework && castWindow.chrome?.cast?.media) {
+      initializeCast()
+      return
+    }
+
+    const previousHandler = castWindow.__onGCastApiAvailable
+
+    castWindow.__onGCastApiAvailable = (isAvailable: boolean) => {
+      previousHandler?.(isAvailable)
+
+      if (isAvailable) {
+        initializeCast()
+      }
+    }
+
+    return () => {
+      if (castWindow.__onGCastApiAvailable === previousHandler) return
+      castWindow.__onGCastApiAvailable = previousHandler
+    }
+  }, [])
+
   if (!currentSong) return null;
 
   const toggleLike = async () => {
@@ -492,9 +540,62 @@ export default function Player() {
     }
   };
 
-  const handleCast = () => {
-    // Placeholder for casting
-    toast.info("Searching for Cast devices...");
+  const handleCast = async () => {
+    if (!currentSong?.audio) {
+      toast.error("No audio available to cast")
+      return
+    }
+
+    if (Capacitor.getPlatform() !== "web") {
+      toast.info("Google Cast is available on web only")
+      return
+    }
+
+    if (typeof window === "undefined") return
+
+    const castWindow = window as CastWindow
+
+    if (!castWindow.cast?.framework || !castWindow.chrome?.cast?.media) {
+      toast.error("Google Cast SDK not ready")
+      return
+    }
+
+    try {
+      const context = castWindow.cast.framework.CastContext.getInstance()
+
+      if (!context.getCurrentSession()) {
+        await context.requestSession()
+      }
+
+      const session = context.getCurrentSession()
+
+      if (!session) {
+        toast.error("No Cast device selected")
+        return
+      }
+
+      const mediaInfo = new castWindow.chrome.cast.media.MediaInfo(currentSong.audio, "audio/mpeg")
+      mediaInfo.streamType = castWindow.chrome.cast.media.StreamType.BUFFERED
+
+      const metadata = new castWindow.chrome.cast.media.MusicTrackMediaMetadata()
+      metadata.title = currentSong.title
+      metadata.artist = currentSong.artist
+      metadata.albumName = currentSong.album ?? ""
+      if (coverUrl) metadata.images = [{ url: coverUrl }]
+      mediaInfo.metadata = metadata
+
+      const request = new castWindow.chrome.cast.media.LoadRequest(mediaInfo)
+      request.autoplay = true
+      request.currentTime = progress || 0
+
+      await session.loadMedia(request)
+      // Pause local playback when casting starts
+      if (isPlaying) togglePlay?.()
+      toast.success(`Casting ${currentSong.title}`)
+    } catch (error) {
+      console.error("Cast error", error)
+      toast.error("Cast failed: Check your network or device connection")
+    }
   }
 
 
@@ -516,6 +617,7 @@ export default function Player() {
         showVisualizer={showVisualizer} handleSeek={handleSeek} handleSeekCommit={handleSeekCommit}
         isDragging={isDragging} localProgress={localProgress}
         handleShare={handleShare} handleCast={handleCast}
+        isCastReady={isCastReady}
         expanded={expanded} setExpanded={setExpanded}
         liked={liked} toggleLike={toggleLike} lyrics={lyrics}
       />
@@ -590,7 +692,7 @@ const ExpandedPlayerComponent = memo(({
   showLyrics, setShowLyrics,
   showDashboard, setShowDashboard, visualizerColors, visualizerMode,
   showVisualizer, handleSeek, handleSeekCommit, isDragging, localProgress,
-  handleShare, handleCast, expanded, setExpanded, liked, toggleLike, lyrics
+  handleShare, handleCast, isCastReady, expanded, setExpanded, liked, toggleLike, lyrics
 }: any) => {
 
   const { downloadSong, removeSong, downloadedSongs, isDownloading } = useOfflineStore()
@@ -1162,23 +1264,15 @@ const ExpandedPlayerComponent = memo(({
 
                       <button
                         onClick={handleCast}
-                        className="p-3 text-white/50 hover:text-white transition-colors"
+                        className={cn(
+                          "p-3 transition-colors",
+                          isCastReady
+                            ? "text-white/50 hover:text-white"
+                            : "text-white/20 hover:text-white/70"
+                        )}
+                        aria-label="Cast to device"
                       >
-                        <svg
-                          xmlns="http://www.w3.org/2000/svg"
-                          width="24"
-                          height="24"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="2"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          className="h-6 w-6"
-                        >
-                          <path d="M2 16.1A5 5 0 0 1 5.9 20M2 12.05A9 9 0 0 1 9.95 20M2 8V6a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-6" />
-                          <line x1="2" x2="2.01" y1="20" y2="20" />
-                        </svg>
+                        <Cast className="h-6 w-6" />
                       </button>
 
                       <button

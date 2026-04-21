@@ -145,8 +145,9 @@ export default function Visualizer({
 
                 // Handle energy state for smooth fading
                 const targetEnergy = isPlaying ? 1 : 0;
-                // Faster attack when playing, slower decay when pausing
-                const lerpFactor = isPlaying ? 0.15 : 0.05;
+                // Fast attack (0.3) when playing so visuals appear immediately;
+                // slow decay (0.05) when pausing for a nice fade-out effect.
+                const lerpFactor = isPlaying ? 0.3 : 0.05;
                 energyRef.current += (targetEnergy - energyRef.current) * lerpFactor;
 
                 // If completely silent and no energy, clear and wait
@@ -174,7 +175,9 @@ export default function Visualizer({
                         dataArray = analyserDataRef.current;
                     } else {
                         silentFramesRef.current += 1;
-                        if (silentFramesRef.current <= 30) {
+                        // Fall back to simulation quickly (5 frames ≈ ~160ms)
+                        // so CORS-tainted or slow-starting audio still shows visuals
+                        if (silentFramesRef.current <= 5) {
                             dataArray = analyserDataRef.current;
                         } else {
                             dataArray = generateSimulatedData(bufferLength, energyRef.current);

@@ -247,21 +247,17 @@ const syncAnalyserRouting = (
   if (!_audioCtx || !_gainA || !_gainB) return;
 
   const shouldUseAnalyser = !!_analyserNode && _visualizerConsumers > 0;
-  if (_analyserAttached === shouldUseAnalyser && analyser === (shouldUseAnalyser ? _analyserNode : null)) {
-    return;
-  }
-
-  const targetNode = shouldUseAnalyser && _analyserNode ? _analyserNode : _audioCtx.destination;
 
   try { _gainA.disconnect(); } catch {}
   try { _gainB.disconnect(); } catch {}
   try { _analyserNode?.disconnect(); } catch {}
 
-  _gainA.connect(targetNode);
-  _gainB.connect(targetNode);
+  _gainA.connect(_audioCtx.destination);
+  _gainB.connect(_audioCtx.destination);
 
   if (shouldUseAnalyser && _analyserNode) {
-    _analyserNode.connect(_audioCtx.destination);
+    _gainA.connect(_analyserNode);
+    _gainB.connect(_analyserNode);
   }
 
   const nextAnalyser = shouldUseAnalyser ? _analyserNode : null;
@@ -780,7 +776,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       // FIX #2: Resume AudioContext BEFORE audio.play().
       // Calling play() while the context is suspended causes a dangling AudioTrack
       // on Android (crash at the AudioFlinger/AudioTrack level).
-      if (ctx.state === 'suspended') {
+      if (ctx.state !== 'running') {
         await ctx.resume();
       }
 

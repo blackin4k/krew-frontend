@@ -304,7 +304,7 @@ export default function Player() {
 
   const [liked, setLiked] = useState(false)
   const visualizerMode: 'wave' | 'bar' | 'circle' = 'wave'
-  const showVisualizer = performanceMode === 'full'
+  const showVisualizer = true;
   const [isCastReady, setIsCastReady] = useState(false)
   const castInitializedRef = useRef(false)
 

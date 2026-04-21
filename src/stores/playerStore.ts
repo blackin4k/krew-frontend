@@ -179,7 +179,7 @@ const detectPerformanceMode = (): PerformanceMode => {
   const lowMemory = typeof nav.deviceMemory === 'number' && nav.deviceMemory <= 4;
   const saveData = !!nav.connection?.saveData;
 
-  return Capacitor.isNativePlatform() || coarsePointer || reducedMotion || lowCoreCount || lowMemory || saveData
+  return reducedMotion || lowCoreCount || lowMemory || saveData
     ? 'lite'
     : 'full';
 };
@@ -255,14 +255,13 @@ const syncAnalyserRouting = (
   _gainA.connect(_audioCtx.destination);
   _gainB.connect(_audioCtx.destination);
 
-  if (shouldUseAnalyser && _analyserNode) {
+  if (_analyserNode) {
     _gainA.connect(_analyserNode);
     _gainB.connect(_analyserNode);
   }
 
-  const nextAnalyser = shouldUseAnalyser ? _analyserNode : null;
   setIfChanged(state, setState, {
-    analyser: nextAnalyser,
+    analyser: _analyserNode,
     _analyserAttached: shouldUseAnalyser,
   });
 };
@@ -444,7 +443,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       showDashboard: false,
       _idleTimeout: null,
       _sleepTimeout: state._sleepTimeout,
-      crossfadeEnabled: state.performanceMode === 'lite' ? false : state.crossfadeEnabled,
+      crossfadeEnabled: state.crossfadeEnabled,
       _activeAudio: 'A',
     });
   },
@@ -570,7 +569,6 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
           !state.loopSegmentEnabled
           && state.crossfadeEnabled
           && state.crossfadeDuration > 0
-          && !isMobilePlaybackEnvironment()
           && timeLeft > 0
           && timeLeft <= state.crossfadeDuration
           && !state._isCrossfading
@@ -671,10 +669,6 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       _convolverNode: null,
       _reverbGainNode: null
     });
-
-    if ((isMobilePlaybackEnvironment() || get().performanceMode === 'lite') && get().crossfadeEnabled) {
-      setIfChanged(get(), set, { crossfadeEnabled: false });
-    }
 
     syncAnalyserRouting(get(), set);
   },
@@ -958,7 +952,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     if (get()._isCrossfading) return;
 
     const state = get();
-    if (!state.crossfadeEnabled || state.crossfadeDuration <= 0 || isMobilePlaybackEnvironment()) {
+    if (!state.crossfadeEnabled || state.crossfadeDuration <= 0) {
       return;
     }
 
@@ -1334,8 +1328,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   },
   setVinylMode: () => set({ vinylMode: false }),
   setCrossfadeEnabled: (enabled: boolean) => {
-    const nextValue = enabled && !isMobilePlaybackEnvironment() && get().performanceMode !== 'lite';
-    setIfChanged(get(), set, { crossfadeEnabled: nextValue });
+    setIfChanged(get(), set, { crossfadeEnabled: enabled });
   },
   setCrossfadeDuration: (duration: number) => setIfChanged(get(), set, { crossfadeDuration: duration }),
 

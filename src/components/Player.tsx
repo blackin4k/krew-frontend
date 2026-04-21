@@ -286,80 +286,27 @@ const LyricsOverlay = memo(function LyricsOverlay({ lyrics, progress, onSeek, co
 });
 
 export default function Player() {
+  const currentSong = usePlayerStore((state) => state.currentSong)
+  const isPlaying = usePlayerStore((state) => state.isPlaying)
+  const shuffle = usePlayerStore((state) => state.shuffle)
+  const repeat = usePlayerStore((state) => state.repeat)
+  const togglePlay = usePlayerStore((state) => state.togglePlay)
+  const next = usePlayerStore((state) => state.next)
+  const prev = usePlayerStore((state) => state.prev)
+  const toggleShuffle = usePlayerStore((state) => state.toggleShuffle)
+  const toggleRepeat = usePlayerStore((state) => state.toggleRepeat)
+  const initAudio = usePlayerStore((state) => state.initAudio)
+  const expanded = usePlayerStore((state) => state.isExpanded)
+  const setExpanded = usePlayerStore((state) => state.setExpanded)
+  const visualizerColor = usePlayerStore((state) => state.visualizerColor)
+  const performanceMode = usePlayerStore((state) => state.performanceMode)
+  const lyrics = usePlayerStore((state) => state.lyrics)
 
-  const {
-    currentSong,
-    isPlaying,
-    volume,
-    progress,
-    duration,
-    shuffle,
-    repeat,
-    togglePlay,
-    next,
-    prev,
-    setVolume,
-    setProgress,
-    toggleShuffle,
-    toggleRepeat,
-    initAudio,
-    isExpanded: expanded,
-    setExpanded,
-    sleepTimerEnd,
-    setSleepTimer,
-    cancelSleepTimer,
-    visualizerColor,
-    setVisualizerColor,
-    lyrics,
-    showLyrics,
-    setShowLyrics,
-    showDashboard,
-    setShowDashboard,
-    crossfadeEnabled,
-    setCrossfadeEnabled,
-    loopStartTime,
-    loopEndTime,
-    loopSegmentEnabled,
-    setLoopStartTime,
-    setLoopEndTime,
-    setLoopSegmentEnabled
-  } = usePlayerStore()
-
-  const { downloadSong, removeSong, downloadedSongs, isDownloading } = useOfflineStore()
-
-  const [muted, setMuted] = useState(false)
   const [liked, setLiked] = useState(false)
-  const [localProgress, setLocalProgress] = useState(0)
-  const [isDragging, setIsDragging] = useState(false)
-  const [visualizerMode, setVisualizerMode] = useState<'wave' | 'bar' | 'circle'>('wave')
-  const [showVisualizer, setShowVisualizer] = useState(true)
-  const [optionsOpen, setOptionsOpen] = useState(false);
+  const visualizerMode: 'wave' | 'bar' | 'circle' = 'wave'
+  const showVisualizer = performanceMode === 'full'
   const [isCastReady, setIsCastReady] = useState(false)
   const castInitializedRef = useRef(false)
-
-  // Segment Loop dragging
-  const [isLoopStartDragging, setIsLoopStartDragging] = useState(false)
-  const [isLoopEndDragging, setIsLoopEndDragging] = useState(false)
-  const [localLoopStart, setLocalLoopStart] = useState(0)
-  const [localLoopEnd, setLocalLoopEnd] = useState(0)
-
-  useEffect(() => {
-    if (!isDragging) {
-      setLocalProgress(progress)
-    }
-  }, [progress, isDragging])
-
-  const handleSeek = (vals: number[]) => {
-    setIsDragging(true)
-    setLocalProgress(vals[0])
-  }
-
-  const handleSeekCommit = (vals: number[]) => {
-    setIsDragging(false)
-    setProgress(vals[0])
-  }
-
-  const previousVolume = useRef(volume)
 
   useEffect(() => {
     initAudio()
@@ -415,11 +362,11 @@ export default function Player() {
     // Ensure API_URL doesn't have a trailing slash (it shouldn't, but safe to check)
     const cleanApiUrl = API_URL.endsWith('/') ? API_URL.slice(0, -1) : API_URL;
     return `${cleanApiUrl}/covers/${cleanPath}`;
-  }, [currentSong]);
+  }, [currentSong?.cover]);
 
   const { dominant: domColor, palette } = useCoverArtworkColors(coverUrl, 3);
 
-  const baseColor = (() => {
+  const baseColor = useMemo(() => {
     if (visualizerColor) return null;
     if (!domColor) return { r: 255, g: 255, b: 255 };
 
@@ -429,7 +376,7 @@ export default function Player() {
       return { r: lighten(domColor.r), g: lighten(domColor.g), b: lighten(domColor.b) };
     }
     return domColor;
-  })();
+  }, [visualizerColor, domColor]);
 
   const paletteColors = useMemo(() => {
     if (!palette?.length) return null;
@@ -442,17 +389,25 @@ export default function Player() {
     ];
   }, [palette]);
 
-  const visualizerColors = visualizerColor
-    ? [`${visualizerColor}33`, `${visualizerColor}66`, `${visualizerColor}99`]
-    : paletteColors
-      ? paletteColors
-      : baseColor
-        ? [
-          `rgba(${baseColor.r}, ${baseColor.g}, ${baseColor.b}, 0.3)`,
-          `rgba(${Math.min(baseColor.r + 40, 255)}, ${Math.min(baseColor.g + 40, 255)}, ${Math.min(baseColor.b + 40, 255)}, 0.8)`,
-          `rgba(${Math.max(baseColor.r - 40, 0)}, ${Math.max(baseColor.g - 40, 0)}, ${Math.max(baseColor.b - 40, 0)}, 1)`
-        ]
-        : undefined;
+  const visualizerColors = useMemo(() => {
+    if (visualizerColor) {
+      return [`${visualizerColor}33`, `${visualizerColor}66`, `${visualizerColor}99`];
+    }
+
+    if (paletteColors) {
+      return paletteColors;
+    }
+
+    if (!baseColor) {
+      return undefined;
+    }
+
+    return [
+      `rgba(${baseColor.r}, ${baseColor.g}, ${baseColor.b}, 0.3)`,
+      `rgba(${Math.min(baseColor.r + 40, 255)}, ${Math.min(baseColor.g + 40, 255)}, ${Math.min(baseColor.b + 40, 255)}, 0.8)`,
+      `rgba(${Math.max(baseColor.r - 40, 0)}, ${Math.max(baseColor.g - 40, 0)}, ${Math.max(baseColor.b - 40, 0)}, 1)`
+    ];
+  }, [visualizerColor, paletteColors, baseColor]);
 
   const uiColor = visualizerColor || (baseColor ? `rgb(${baseColor.r}, ${baseColor.g}, ${baseColor.b})` : "#ffffff");
 
@@ -462,7 +417,7 @@ export default function Player() {
       .get(`/songs/${currentSong.id}/liked`)
       .then(res => setLiked(res.data.liked))
       .catch(() => setLiked(false))
-  }, [currentSong])
+  }, [currentSong?.id])
 
   useEffect(() => {
     if (typeof window === "undefined" || Capacitor.getPlatform() !== "web") return
@@ -609,19 +564,15 @@ export default function Player() {
       />
       <ExpandedPlayerComponent
         currentSong={currentSong} coverUrl={coverUrl} uiColor={uiColor}
-        isPlaying={isPlaying} progress={progress} duration={duration}
+        isPlaying={isPlaying}
         togglePlay={togglePlay} next={next} prev={prev}
         shuffle={shuffle} repeat={repeat} toggleShuffle={toggleShuffle} toggleRepeat={toggleRepeat}
-        showLyrics={showLyrics} setShowLyrics={setShowLyrics}
-        showDashboard={showDashboard} setShowDashboard={setShowDashboard}
-        crossfadeEnabled={crossfadeEnabled} setCrossfadeEnabled={setCrossfadeEnabled}
         visualizerColors={visualizerColors} visualizerMode={visualizerMode}
-        showVisualizer={showVisualizer} handleSeek={handleSeek} handleSeekCommit={handleSeekCommit}
-        isDragging={isDragging} localProgress={localProgress}
+        showVisualizer={showVisualizer}
         handleShare={handleShare} handleCast={handleCast}
         isCastReady={isCastReady}
         expanded={expanded} setExpanded={setExpanded}
-        liked={liked} toggleLike={toggleLike} lyrics={lyrics}
+        liked={liked} toggleLike={toggleLike}
       />
     </>
   )
@@ -689,14 +640,21 @@ const MiniPlayerComponent = memo(({
 
 // Memoized Expanded Player
 const ExpandedPlayerComponent = memo(({
-  currentSong, coverUrl, uiColor, isPlaying, progress, duration,
+  currentSong, coverUrl, uiColor, isPlaying,
   togglePlay, next, prev, shuffle, repeat, toggleShuffle, toggleRepeat,
-  showLyrics, setShowLyrics,
-  showDashboard, setShowDashboard, crossfadeEnabled, setCrossfadeEnabled, visualizerColors, visualizerMode,
-  showVisualizer, handleSeek, handleSeekCommit, isDragging, localProgress,
-  handleShare, handleCast, isCastReady, expanded, setExpanded, liked, toggleLike, lyrics
+  visualizerColors, visualizerMode,
+  showVisualizer, handleShare, handleCast, isCastReady, expanded, setExpanded, liked, toggleLike
 }: any) => {
-
+  const progress = usePlayerStore((state) => state.progress)
+  const duration = usePlayerStore((state) => state.duration)
+  const lyrics = usePlayerStore((state) => state.lyrics)
+  const showLyrics = usePlayerStore((state) => state.showLyrics)
+  const setShowLyrics = usePlayerStore((state) => state.setShowLyrics)
+  const showDashboard = usePlayerStore((state) => state.showDashboard)
+  const setShowDashboard = usePlayerStore((state) => state.setShowDashboard)
+  const crossfadeEnabled = usePlayerStore((state) => state.crossfadeEnabled)
+  const setCrossfadeEnabled = usePlayerStore((state) => state.setCrossfadeEnabled)
+  const setProgress = usePlayerStore((state) => state.setProgress)
   const { downloadSong, removeSong, downloadedSongs, isDownloading } = useOfflineStore()
   const downloadedStatus = currentSong ? downloadedSongs.some(s => s.id === currentSong.id) : false;
   const downloadingStatus = currentSong ? isDownloading[currentSong.id] : false;
@@ -712,12 +670,37 @@ const ExpandedPlayerComponent = memo(({
   const [localLoopEnd, setLocalLoopEnd] = useState(0)
   const [initialLoopStart, setInitialLoopStart] = useState(0)
   const [initialLoopEnd, setInitialLoopEnd] = useState(0)
+  const [localProgress, setLocalProgress] = useState(0)
+  const [isDragging, setIsDragging] = useState(false)
   const progressBarRef = useRef<HTMLDivElement | null>(null)
+
+  useEffect(() => {
+    if (!isDragging) {
+      setLocalProgress(progress)
+    }
+  }, [progress, isDragging]);
+
+  const handleSeek = (vals: number[]) => {
+    const nextValue = vals[0] ?? 0;
+    setIsDragging(true);
+    setLocalProgress((previous) => Math.abs(previous - nextValue) >= 0.5 ? nextValue : previous);
+  };
+
+  const handleSeekCommit = (vals: number[]) => {
+    const nextValue = vals[0] ?? 0;
+    setIsDragging(false);
+    setLocalProgress(nextValue);
+    if (Math.abs(progress - nextValue) >= 0.5) {
+      setProgress(nextValue);
+    }
+  };
 
   useEffect(() => {
     if (!isLoopStartDragging) setLocalLoopStart(loopStartTime);
     if (!isLoopEndDragging) setLocalLoopEnd(loopEndTime);
   }, [loopStartTime, loopEndTime, isLoopStartDragging, isLoopEndDragging]);
+
+  const displayProgress = isDragging ? localProgress : progress;
 
   const startLoopDrag = (event: React.PointerEvent<HTMLDivElement>, handle: 'start' | 'end') => {
     event.preventDefault();
@@ -1131,7 +1114,7 @@ const ExpandedPlayerComponent = memo(({
 
                       <Slider
                         defaultValue={[0]}
-                        value={[isDragging ? localProgress : progress]}
+                        value={[displayProgress]}
                         max={duration || 100}
                         step={1}
                         onValueChange={handleSeek}
@@ -1141,8 +1124,8 @@ const ExpandedPlayerComponent = memo(({
                       />
                     </div>
                     <div className="flex justify-between text-[11px] font-medium text-white/40 mt-1 tabular-nums font-mono">
-                      <span>{formatTime(isDragging ? localProgress : progress)}</span>
-                      <span>-{formatTime((duration || 0) - (isDragging ? localProgress : progress))}</span>
+                      <span>{formatTime(displayProgress)}</span>
+                      <span>-{formatTime((duration || 0) - displayProgress)}</span>
                     </div>
                   </div>
 

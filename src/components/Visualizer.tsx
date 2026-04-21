@@ -50,13 +50,18 @@ export default function Visualizer({
     mode = 'wave'
 }: VisualizerProps) {
     const canvasRef = useRef<HTMLCanvasElement>(null);
-    const { analyser, isPlaying, attachVisualizer, detachVisualizer } = usePlayerStore();
+    const analyser = usePlayerStore((state) => state.analyser);
+    const isPlaying = usePlayerStore((state) => state.isPlaying);
+    const performanceMode = usePlayerStore((state) => state.performanceMode);
+    const attachVisualizer = usePlayerStore((state) => state.attachVisualizer);
+    const detachVisualizer = usePlayerStore((state) => state.detachVisualizer);
     const animationRef = useRef<number>();
     const energyRef = useRef(0); // smooth energy for simulated mode
     const silentFramesRef = useRef(0);
     const analyserDataRef = useRef<Uint8Array | null>(null);
     const smoothedDataRef = useRef<Float32Array | null>(null);
     const lastFrameTimeRef = useRef(0);
+    const isCanvasVisibleRef = useRef(true);
     const gradientCacheRef = useRef<{
         key: string;
         bar: CanvasGradient | null;
@@ -69,31 +74,50 @@ export default function Visualizer({
     }, [attachVisualizer, detachVisualizer]);
 
     useEffect(() => {
-        const isMobile = typeof window !== 'undefined'
-            && window.matchMedia('(max-width: 767px)').matches;
+        const isMobile = performanceMode === 'lite'
+            || (typeof window !== 'undefined' && window.matchMedia('(max-width: 767px)').matches);
         
-        // 30fps for mobile, 60fps for desktop
-        const frameBudget = isMobile ? 32 : 16;
+        // 20fps for lite mode, 30fps for mobile, 60fps for desktop
+        const frameBudget = performanceMode === 'lite' ? 48 : isMobile ? 32 : 16;
         const dprCap = isMobile ? 1 : 1.5;
         const waveStep = isMobile ? 48 : 32;
+        let isDisposed = false;
+
+        const canRender = () => {
+            const documentVisible = typeof document === 'undefined' || document.visibilityState === 'visible';
+            return !isDisposed && isCanvasVisibleRef.current && documentVisible;
+        };
+
+        const scheduleNextFrame = () => {
+            if (!canRender()) {
+                animationRef.current = undefined;
+                return;
+            }
+            animationRef.current = requestAnimationFrame(renderFrame);
+        };
 
         const renderFrame = () => {
+            if (!canRender()) {
+                animationRef.current = undefined;
+                return;
+            }
+
             const canvas = canvasRef.current;
             if (!canvas) {
-                animationRef.current = requestAnimationFrame(renderFrame);
+                scheduleNextFrame();
                 return;
             }
 
             const ctx = canvas.getContext('2d');
             if (!ctx) {
-                animationRef.current = requestAnimationFrame(renderFrame);
+                scheduleNextFrame();
                 return;
             }
 
             try {
                 const now = performance.now();
                 if (now - lastFrameTimeRef.current < frameBudget) {
-                    animationRef.current = requestAnimationFrame(renderFrame);
+                    scheduleNextFrame();
                     return;
                 }
                 lastFrameTimeRef.current = now;
@@ -102,7 +126,7 @@ export default function Visualizer({
                 const cssHeight = canvas.offsetHeight || canvas.clientHeight;
 
                 if (!cssWidth || !cssHeight) {
-                    animationRef.current = requestAnimationFrame(renderFrame);
+                    scheduleNextFrame();
                     return;
                 }
 
@@ -128,7 +152,7 @@ export default function Visualizer({
                 // If completely silent and no energy, clear and wait
                 if (energyRef.current < 0.001 && !isPlaying) {
                     ctx.clearRect(0, 0, cssWidth, cssHeight);
-                    animationRef.current = requestAnimationFrame(renderFrame);
+                    scheduleNextFrame();
                     return;
                 }
 
@@ -341,19 +365,60 @@ export default function Visualizer({
                 ctx.fillStyle = gradientCacheRef.current.fade || 'rgba(0,0,0,0.5)';
                 ctx.fillRect(0, height * 0.7, width, height * 0.3);
                 
-                animationRef.current = requestAnimationFrame(renderFrame);
+                scheduleNextFrame();
             } catch (e) {
                 console.warn("Visualizer Render Error:", e);
+                scheduleNextFrame();
+            }
+        };
+
+        const handleVisibilityChange = () => {
+            if (!canRender()) {
+                if (animationRef.current) {
+                    cancelAnimationFrame(animationRef.current);
+                    animationRef.current = undefined;
+                }
+                return;
+            }
+
+            if (!animationRef.current) {
+                lastFrameTimeRef.current = 0;
                 animationRef.current = requestAnimationFrame(renderFrame);
             }
         };
 
-        renderFrame();
+        const observer = typeof IntersectionObserver !== 'undefined' && canvasRef.current
+            ? new IntersectionObserver(([entry]) => {
+                isCanvasVisibleRef.current = !!entry?.isIntersecting;
+                handleVisibilityChange();
+            }, { threshold: 0.05 })
+            : null;
+
+        if (canvasRef.current && observer) {
+            observer.observe(canvasRef.current);
+        }
+
+        if (typeof document !== 'undefined') {
+            handleVisibilityChange();
+            document.addEventListener('visibilitychange', handleVisibilityChange);
+        } else {
+            renderFrame();
+        }
 
         return () => {
-            if (animationRef.current) cancelAnimationFrame(animationRef.current);
+            isDisposed = true;
+            observer?.disconnect();
+            if (typeof document !== 'undefined') {
+                document.removeEventListener('visibilitychange', handleVisibilityChange);
+            }
+            if (animationRef.current) {
+                cancelAnimationFrame(animationRef.current);
+                animationRef.current = undefined;
+            }
+            analyserDataRef.current = null;
+            smoothedDataRef.current = null;
         };
-    }, [analyser, isPlaying, colors, mode]);
+    }, [analyser, isPlaying, colors, mode, performanceMode]);
 
     return (
         <canvas

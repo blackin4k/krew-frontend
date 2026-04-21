@@ -348,8 +348,8 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     gainB.gain.value = 0;
 
     const analyser = ctx.createAnalyser();
-    analyser.fftSize = 128;
-    analyser.smoothingTimeConstant = 0.7;
+    analyser.fftSize = 512;
+    analyser.smoothingTimeConstant = 0.75;
 
     const setupSource = (audio: HTMLAudioElement, gain: GainNode) => {
       try {

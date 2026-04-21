@@ -69,22 +69,13 @@ export default function Visualizer({
     }, [attachVisualizer, detachVisualizer]);
 
     useEffect(() => {
-        if (!isPlaying) {
-            const canvas = canvasRef.current;
-            const ctx = canvas?.getContext('2d');
-
-            if (canvas && ctx) {
-                ctx.clearRect(0, 0, canvas.width, canvas.height);
-            }
-
-            return;
-        }
-
         const isMobile = typeof window !== 'undefined'
             && window.matchMedia('(max-width: 767px)').matches;
-        const frameBudget = isMobile ? 66 : 33;
+        
+        // 30fps for mobile, 60fps for desktop
+        const frameBudget = isMobile ? 32 : 16;
         const dprCap = isMobile ? 1 : 1.5;
-        const waveStep = isMobile ? 36 : 24;
+        const waveStep = isMobile ? 48 : 32;
 
         const renderFrame = () => {
             const canvas = canvasRef.current;
@@ -128,8 +119,19 @@ export default function Visualizer({
 
                 const bufferLength = analyser ? analyser.frequencyBinCount : 128;
 
-                // Prefer the real analyser on Android too. Only fall back to
-                // simulated data when the analyser is missing or stays flat.
+                // Handle energy state for smooth fading
+                const targetEnergy = isPlaying ? 1 : 0;
+                // Faster attack when playing, slower decay when pausing
+                const lerpFactor = isPlaying ? 0.15 : 0.05;
+                energyRef.current += (targetEnergy - energyRef.current) * lerpFactor;
+
+                // If completely silent and no energy, clear and wait
+                if (energyRef.current < 0.001 && !isPlaying) {
+                    ctx.clearRect(0, 0, cssWidth, cssHeight);
+                    animationRef.current = requestAnimationFrame(renderFrame);
+                    return;
+                }
+
                 let dataArray: Uint8Array;
                 if (analyser) {
                     if (!analyserDataRef.current || analyserDataRef.current.length !== bufferLength) {
@@ -138,35 +140,23 @@ export default function Visualizer({
 
                     analyser.getByteFrequencyData(analyserDataRef.current as any);
 
-                    if (!isPlaying) {
-                        silentFramesRef.current = 0;
-                        energyRef.current += (0 - energyRef.current) * 0.18;
-                        dataArray = generateSimulatedData(bufferLength, energyRef.current);
-                    } else {
-                        let peak = 0;
-                        for (let i = 0; i < analyserDataRef.current.length; i++) {
-                            if (analyserDataRef.current[i] > peak) {
-                                peak = analyserDataRef.current[i];
-                            }
-                        }
+                    let peak = 0;
+                    for (let i = 0; i < analyserDataRef.current.length; i++) {
+                        if (analyserDataRef.current[i] > peak) peak = analyserDataRef.current[i];
+                    }
 
-                        if (peak > 0) {
-                            silentFramesRef.current = 0;
+                    if (peak > 5) { // Small threshold to avoid floor noise
+                        silentFramesRef.current = 0;
+                        dataArray = analyserDataRef.current;
+                    } else {
+                        silentFramesRef.current += 1;
+                        if (silentFramesRef.current <= 30) {
                             dataArray = analyserDataRef.current;
                         } else {
-                            silentFramesRef.current += 1;
-                            if (silentFramesRef.current <= 20) {
-                                dataArray = analyserDataRef.current;
-                            } else {
-                                energyRef.current += (1 - energyRef.current) * 0.05;
-                                dataArray = generateSimulatedData(bufferLength, energyRef.current);
-                            }
+                            dataArray = generateSimulatedData(bufferLength, energyRef.current);
                         }
                     }
                 } else {
-                    silentFramesRef.current = 0;
-                    const targetEnergy = isPlaying ? 1 : 0;
-                    energyRef.current += (targetEnergy - energyRef.current) * 0.05;
                     dataArray = generateSimulatedData(bufferLength, energyRef.current);
                 }
 
@@ -197,44 +187,46 @@ export default function Visualizer({
                     ctx.fillStyle = gradientCacheRef.current.bar || colors[0];
 
                     for (let i = 0; i < bufferLength; i++) {
-                        const barHeight = (dataArray[i] / 255) * height * 0.8;
-                        ctx.fillRect(x, height - barHeight, barWidth, barHeight);
+                        const barHeight = (dataArray[i] / 255) * height * 0.8 * energyRef.current;
+                        if (barHeight > 0.5) {
+                            ctx.fillRect(x, height - barHeight, barWidth, barHeight);
+                        }
                         x += barWidth + 1;
                     }
                 } else if (mode === 'circle') {
-                    // Simple circular visualizer
+                    // Circular visualizer
                     const centerX = width / 2;
                     const centerY = height / 2;
-                    const radius = Math.min(width, height) / 2.2;
+                    const radius = Math.min(width, height) / 2.5;
 
                     ctx.beginPath();
                     ctx.arc(centerX, centerY, radius, 0, 2 * Math.PI);
                     ctx.strokeStyle = colors[0] || 'rgba(255,255,255,0.1)';
-                    ctx.lineWidth = 2;
+                    ctx.lineWidth = 1;
                     ctx.stroke();
 
-                    // Bars around circle
-                    const bars = 80; // More bars
+                    const bars = isMobile ? 40 : 80;
                     const step = (Math.PI * 2) / bars;
 
                     for (let i = 0; i < bars; i++) {
-                        const val = dataArray[i * 2] || 0;
-                        const barH = (val / 255) * 80; // Taller bars
-                        const angle = i * step;
+                        const idx = Math.floor((i / bars) * bufferLength);
+                        const val = dataArray[idx] || 0;
+                        const barH = (val / 255) * (radius * 0.5) * energyRef.current;
+                        if (barH < 1) continue;
 
-                        const x1 = centerX + Math.cos(angle) * (radius + 5);
-                        const y1 = centerY + Math.sin(angle) * (radius + 5);
-                        const x2 = centerX + Math.cos(angle) * (radius + 5 + barH);
-                        const y2 = centerY + Math.sin(angle) * (radius + 5 + barH);
+                        const angle = i * step;
+                        const x1 = centerX + Math.cos(angle) * (radius + 2);
+                        const y1 = centerY + Math.sin(angle) * (radius + 2);
+                        const x2 = centerX + Math.cos(angle) * (radius + 2 + barH);
+                        const y2 = centerY + Math.sin(angle) * (radius + 2 + barH);
 
                         ctx.beginPath();
                         ctx.moveTo(x1, y1);
                         ctx.lineTo(x2, y2);
                         ctx.strokeStyle = colors[1] || 'white';
-                        ctx.lineWidth = 2;
+                        ctx.lineWidth = isMobile ? 3 : 2;
                         ctx.stroke();
                     }
-
                 } else {
                     // WAVE MODE (Default)
                     if (!smoothedDataRef.current || smoothedDataRef.current.length !== dataArray.length) {
@@ -244,29 +236,34 @@ export default function Visualizer({
 
                     let bassTotal = 0;
                     let intensityTotal = 0;
+                    const sampleCount = Math.min(dataArray.length, 32);
                     for (let i = 0; i < dataArray.length; i++) {
-                        const nextValue = smoothedData[i] + (dataArray[i] - smoothedData[i]) * 0.35;
+                        const nextValue = smoothedData[i] + (dataArray[i] - smoothedData[i]) * 0.25;
                         smoothedData[i] = nextValue;
                         intensityTotal += nextValue;
                         if (i < 10) bassTotal += nextValue;
                     }
 
-                    const bass = bassTotal / Math.min(10, dataArray.length);
-                    const scale = bass / 255;
-                    const intensity = intensityTotal / dataArray.length;
+                    const bass = bassTotal / 10;
+                    const scale = (bass / 255) * energyRef.current;
+                    const intensity = (intensityTotal / dataArray.length) / 255;
 
-                    // Bass reactive zoom + alpha pulse
-                    ctx.globalAlpha = 0.55 + scale * 0.45 + intensity / 700;
+                    // Reactive zoom + alpha pulse
+                    ctx.globalAlpha = (0.4 + intensity * 0.6) * energyRef.current;
                     ctx.save();
                     ctx.translate(width / 2, height / 2);
-                    const zoom = 1 + scale * 0.03;
+                    const zoom = 1 + scale * 0.05;
                     ctx.scale(zoom, zoom);
                     ctx.translate(-width / 2, -height / 2);
 
                     const drawWave = (colorStr: string, offset: number, speed: number, amplitude: number) => {
                         ctx.save();
-                        ctx.shadowBlur = 18;
-                        ctx.shadowColor = colorStr;
+                        
+                        // ONLY use shadowBlur on Desktop - it's a mobile performance killer
+                        if (!isMobile) {
+                            ctx.shadowBlur = 15;
+                            ctx.shadowColor = colorStr;
+                        }
 
                         ctx.beginPath();
                         ctx.moveTo(0, height);
@@ -274,16 +271,13 @@ export default function Visualizer({
                         const points: { x: number, y: number }[] = [];
                         const time = now * speed;
 
-                        for (let i = 0; i <= width + 10; i += waveStep) {
-                            const freqIdx = Math.floor((i / width) * (bufferLength / 2));
-                            const smoothData =
-                                (smoothedData[freqIdx] * 0.6 +
-                                    (smoothedData[freqIdx - 1] || 0) * 0.2 +
-                                    (smoothedData[freqIdx + 1] || 0) * 0.2);
+                        for (let i = 0; i <= width + waveStep; i += waveStep) {
+                            const freqIdx = Math.floor((i / width) * (bufferLength / 2.5));
+                            const smoothValue = smoothedData[freqIdx] || 0;
 
                             const waveY = height * (1 - offset)
-                                - Math.sin(i * 0.005 + time) * amplitude
-                                - (smoothData * 0.6 * scale * 1.5);
+                                - Math.sin(i * 0.004 + time) * amplitude * (0.5 + energyRef.current * 0.5)
+                                - (smoothValue * 0.5 * scale * (height / 200));
 
                             points.push({ x: i, y: waveY });
                         }
@@ -297,18 +291,17 @@ export default function Visualizer({
                             ctx.quadraticCurveTo(p0.x, p0.y, midX, midY);
                         }
 
-                        ctx.lineTo(width, height + 200);
-                        ctx.lineTo(0, height + 200);
+                        ctx.lineTo(width, height + 100);
+                        ctx.lineTo(0, height + 100);
                         ctx.closePath();
 
-                        const gradient = ctx.createLinearGradient(0, height * (1 - offset - 0.5), 0, height);
+                        const gradient = ctx.createLinearGradient(0, height * (1 - offset - 0.3), 0, height);
                         if (colorStr.startsWith('rgba')) {
                             const match = colorStr.match(/rgba\((\d+),\s*(\d+),\s*(\d+),\s*([\d.]+)\)/);
                             if (match) {
                                 const [_, r, g, b, a] = match;
                                 gradient.addColorStop(0, `rgba(${r}, ${g}, ${b}, 0.0)`);
-                                gradient.addColorStop(0.3, `rgba(${r}, ${g}, ${b}, ${Number(a) * 0.6})`);
-                                gradient.addColorStop(1, `rgba(${r}, ${g}, ${b}, ${Number(a)})`);
+                                gradient.addColorStop(1, `rgba(${r}, ${g}, ${b}, ${Number(a) * energyRef.current})`);
                             } else {
                                 gradient.addColorStop(0, "transparent");
                                 gradient.addColorStop(1, colorStr);
@@ -325,31 +318,31 @@ export default function Visualizer({
 
                     const waveLayers = isMobile
                         ? [
-                            [colors[0], 0.28, 0.0008, 28 + scale * 28],
-                            [colors[1], 0.18, 0.0015, 20 + scale * 20],
-                            [colors[2], 0.12, 0.0025, 12 + scale * 24],
+                            [colors[0], 0.25, 0.0006, 20 + scale * 30],
+                            [colors[1], 0.15, 0.0012, 15 + scale * 25],
+                            [colors[2], 0.08, 0.0020, 10 + scale * 20],
                         ]
                         : [
-                            [colors[0], 0.35, 0.0004, 40 + scale * 40],
-                            [colors[0], 0.25, 0.0008, 30 + scale * 30],
-                            [colors[1], 0.18, 0.0015, 25 + scale * 25],
-                            [colors[2], 0.12, 0.0025, 15 + scale * 30],
+                            [colors[0], 0.35, 0.0003, 40 + scale * 40],
+                            [colors[0], 0.25, 0.0007, 30 + scale * 30],
+                            [colors[1], 0.18, 0.0012, 25 + scale * 25],
+                            [colors[2], 0.12, 0.0022, 15 + scale * 30],
                         ];
 
                     for (const [color, offset, speed, amplitude] of waveLayers) {
                         drawWave(color as string, offset as number, speed as number, amplitude as number);
                     }
 
-                    ctx.restore(); // zoom transform
+                    ctx.restore();
                     ctx.globalAlpha = 1;
                 }
 
-                // Fade bottom to remove hard edge
+                // Fade bottom edge
                 ctx.fillStyle = gradientCacheRef.current.fade || 'rgba(0,0,0,0.5)';
-                ctx.fillRect(0, 0, width, height);
+                ctx.fillRect(0, height * 0.7, width, height * 0.3);
+                
                 animationRef.current = requestAnimationFrame(renderFrame);
             } catch (e) {
-                // Prevent crash if canvas drawing fails due to NaN/Infinity
                 console.warn("Visualizer Render Error:", e);
                 animationRef.current = requestAnimationFrame(renderFrame);
             }

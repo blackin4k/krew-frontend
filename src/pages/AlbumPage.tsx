@@ -19,6 +19,7 @@ const AlbumPage = () => {
 
   useEffect(() => {
     if (name) {
+      setLoading(true);
       browseApi
         .albumSongs(name)
         .then((res) => setSongs(res.data || []))

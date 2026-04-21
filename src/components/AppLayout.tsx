@@ -1,4 +1,4 @@
-import { Suspense, lazy } from "react";
+import { Suspense, lazy, useEffect, useState } from "react";
 import { SidebarContent } from "./Sidebar";
 import Sidebar from "./Sidebar";
 import MobileNav from "./MobileNav";
@@ -16,14 +16,28 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   useKeyboardShortcuts();
   const { isSidebarOpen, setSidebarOpen } = useUIStore();
   const { isOnline } = useNetworkStatus();
+  const [showBackgroundVisualizer, setShowBackgroundVisualizer] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const mediaQuery = window.matchMedia("(min-width: 768px)");
+    const sync = () => setShowBackgroundVisualizer(mediaQuery.matches);
+
+    sync();
+    mediaQuery.addEventListener("change", sync);
+    return () => mediaQuery.removeEventListener("change", sync);
+  }, []);
 
   return (
     <div className="relative min-h-screen w-full overflow-hidden bg-[#0a0a0a]">
       <OfflineBanner />
       {/* Background Visualizer - Taller and Behind Content */}
-      <Suspense fallback={null}>
-        <Visualizer className="absolute bottom-0 left-0 w-full h-[60%] pointer-events-none z-0 opacity-40 mix-blend-screen" />
-      </Suspense>
+      {showBackgroundVisualizer && (
+        <Suspense fallback={null}>
+          <Visualizer className="absolute bottom-0 left-0 w-full h-[60%] pointer-events-none z-0 opacity-40 mix-blend-screen" />
+        </Suspense>
+      )}
       <Sidebar />
 
       {/* Mobile Sidebar Sheet (Controlled by UI Store) */}

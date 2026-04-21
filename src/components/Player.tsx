@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState, useMemo, memo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import Visualizer from "./Visualizer";
-import { useCoverPalette, useDominantColor } from "@/hooks/useDominantColor";
+import { useCoverArtworkColors } from "@/hooks/useDominantColor";
 import AudioDashboard from "./AudioDashboard";
 import api, { configureJamPlayback, playlistsApi, API_URL } from "@/lib/api";
 import {
@@ -315,6 +315,8 @@ export default function Player() {
     setShowLyrics,
     showDashboard,
     setShowDashboard,
+    crossfadeEnabled,
+    setCrossfadeEnabled,
     loopStartTime,
     loopEndTime,
     loopSegmentEnabled,
@@ -415,8 +417,7 @@ export default function Player() {
     return `${cleanApiUrl}/covers/${cleanPath}`;
   }, [currentSong]);
 
-  const domColor = useDominantColor(coverUrl);
-  const { palette } = useCoverPalette(coverUrl, 3);
+  const { dominant: domColor, palette } = useCoverArtworkColors(coverUrl, 3);
 
   const baseColor = (() => {
     if (visualizerColor) return null;
@@ -613,6 +614,7 @@ export default function Player() {
         shuffle={shuffle} repeat={repeat} toggleShuffle={toggleShuffle} toggleRepeat={toggleRepeat}
         showLyrics={showLyrics} setShowLyrics={setShowLyrics}
         showDashboard={showDashboard} setShowDashboard={setShowDashboard}
+        crossfadeEnabled={crossfadeEnabled} setCrossfadeEnabled={setCrossfadeEnabled}
         visualizerColors={visualizerColors} visualizerMode={visualizerMode}
         showVisualizer={showVisualizer} handleSeek={handleSeek} handleSeekCommit={handleSeekCommit}
         isDragging={isDragging} localProgress={localProgress}
@@ -690,7 +692,7 @@ const ExpandedPlayerComponent = memo(({
   currentSong, coverUrl, uiColor, isPlaying, progress, duration,
   togglePlay, next, prev, shuffle, repeat, toggleShuffle, toggleRepeat,
   showLyrics, setShowLyrics,
-  showDashboard, setShowDashboard, visualizerColors, visualizerMode,
+  showDashboard, setShowDashboard, crossfadeEnabled, setCrossfadeEnabled, visualizerColors, visualizerMode,
   showVisualizer, handleSeek, handleSeekCommit, isDragging, localProgress,
   handleShare, handleCast, isCastReady, expanded, setExpanded, liked, toggleLike, lyrics
 }: any) => {
@@ -1219,6 +1221,19 @@ const ExpandedPlayerComponent = memo(({
                       >
                         <ListRestart className="w-4 h-4" />
                         {loopSegmentEnabled ? 'Loop ON' : 'Loop OFF'}
+                      </button>
+
+                      <button
+                        onClick={() => setCrossfadeEnabled(!crossfadeEnabled)}
+                        className={cn(
+                          "inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-xs font-semibold transition-colors",
+                          crossfadeEnabled
+                            ? "bg-white/15 text-white border border-white/10"
+                            : "bg-white/5 text-white/70 hover:text-white"
+                        )}
+                      >
+                        <Waves className="w-4 h-4" />
+                        {crossfadeEnabled ? 'Crossfade ON' : 'Crossfade OFF'}
                       </button>
 
                       <div className="text-sm text-white/60 font-medium tabular-nums">

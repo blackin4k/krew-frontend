@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { playerApi, radioApi, API_URL } from '@/lib/api';
+import { playerApi, radioApi, songsApi, API_URL } from '@/lib/api';
 import { normalizeQueueResponse } from '@/lib/queue';
 import { toast } from 'sonner';
 import { useOfflineStore } from './offlineStore';
@@ -42,6 +42,8 @@ interface PlayerState {
   // Visualizer
   visualizerColor: string | null;
   setVisualizerColor: (color: string | null) => void;
+  attachVisualizer: () => void;
+  detachVisualizer: () => void;
 
   // Segment Looper
   loopStartTime: number;
@@ -61,6 +63,8 @@ interface PlayerState {
   setAiDjMode: (enabled: boolean) => void;
 
   // Crossfade
+  crossfadeEnabled: boolean;
+  setCrossfadeEnabled: (enabled: boolean) => void;
   crossfadeDuration: number;
   setCrossfadeDuration: (duration: number) => void;
 
@@ -72,6 +76,8 @@ interface PlayerState {
   _activeAudio: 'A' | 'B';
   _isCrossfading: boolean;
   _audioCtx: AudioContext | null;
+  _analyserNode: AnalyserNode | null;
+  _visualizerConsumers: number;
   _eqNodes: BiquadFilterNode[];
   _vinylNode: BiquadFilterNode | null;
   _vinylNoiseNode: AudioBufferSourceNode | null;
@@ -131,6 +137,46 @@ interface PlayerState {
   clearIdleTimeout: () => void;
 }
 
+const PROGRESS_UPDATE_INTERVAL_MS = 250;
+const PROGRESS_EPSILON = 0.05;
+const DURATION_EPSILON = 0.25;
+
+const isMobilePlaybackEnvironment = () => {
+  if (typeof window === 'undefined') {
+    return Capacitor.isNativePlatform();
+  }
+
+  return Capacitor.isNativePlatform() || window.innerWidth < 768;
+};
+
+const syncAnalyserRouting = (
+  state: PlayerState,
+  setState: (partial: Partial<PlayerState>) => void,
+) => {
+  const { _audioCtx, _gainA, _gainB, _analyserNode, _visualizerConsumers, analyser } = state;
+
+  if (!_audioCtx || !_gainA || !_gainB) return;
+
+  const shouldUseAnalyser = !!_analyserNode && _visualizerConsumers > 0;
+  const targetNode = shouldUseAnalyser && _analyserNode ? _analyserNode : _audioCtx.destination;
+
+  try { _gainA.disconnect(); } catch {}
+  try { _gainB.disconnect(); } catch {}
+  try { _analyserNode?.disconnect(); } catch {}
+
+  _gainA.connect(targetNode);
+  _gainB.connect(targetNode);
+
+  if (shouldUseAnalyser && _analyserNode) {
+    _analyserNode.connect(_audioCtx.destination);
+  }
+
+  const nextAnalyser = shouldUseAnalyser ? _analyserNode : null;
+  if (analyser !== nextAnalyser) {
+    setState({ analyser: nextAnalyser });
+  }
+};
+
 export const usePlayerStore = create<PlayerState>((set, get) => ({
   currentSong: null,
   isPlaying: false,
@@ -160,10 +206,19 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   setLoopSegmentEnabled: (loopSegmentEnabled) => set({ loopSegmentEnabled }),
 
   visualizerColor: null,
+  attachVisualizer: () => {
+    set((state) => ({ _visualizerConsumers: state._visualizerConsumers + 1 }));
+    syncAnalyserRouting(get(), set);
+  },
+  detachVisualizer: () => {
+    set((state) => ({ _visualizerConsumers: Math.max(0, state._visualizerConsumers - 1) }));
+    syncAnalyserRouting(get(), set);
+  },
   eqGains: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
   vinylMode: false,
-  aiDjMode: true,
-  crossfadeDuration: 6, // Optimized for smooth transitions
+  aiDjMode: false,
+  crossfadeEnabled: false,
+  crossfadeDuration: 6,
 
   _audioA: null,
   _audioB: null,
@@ -192,6 +247,8 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   _activeAudio: 'A',
   _isCrossfading: false,
   _audioCtx: null,
+  _analyserNode: null,
+  _visualizerConsumers: 0,
   _eqNodes: [],
   _vinylNode: null,
   _vinylNoiseNode: null,
@@ -260,404 +317,201 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       audio: null,
       _audioA: null, _audioB: null,
       _audioCtx: null,
+      _analyserNode: null,
       analyser: null,
       isPlaying: false
     });
   },
 
   initAudio: () => {
-    // SINGLETON PATTERN: Don't create if exists and running
     const existing = get()._audioCtx;
-    if (typeof window !== 'undefined' && existing && existing.state !== 'closed') {
+    if (typeof window === 'undefined' || (existing && existing.state !== 'closed')) {
       return;
     }
 
-    if (typeof window !== 'undefined') {
-      const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
-      const ctx = new AudioContext(); // New Context
+    const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
+    const ctx = new AudioContext();
 
-      const createAudioNode = () => {
-        const audio = new Audio();
-        // crossOrigin is required for Web Audio API (createMediaElementSource)
-        // to work without CORS-tainting the audio stream.
-        // R2 bucket CORS is configured at backend startup (put_bucket_cors).
-        audio.crossOrigin = "anonymous";
-        audio.volume = get().volume;
-        return audio;
-      };
+    const createAudioNode = () => {
+      const audio = new Audio();
+      audio.crossOrigin = 'anonymous';
+      audio.preload = 'auto';
+      audio.volume = get().volume;
+      return audio;
+    };
 
-      const audioA = createAudioNode();
-      const audioB = createAudioNode();
+    const audioA = createAudioNode();
+    const audioB = createAudioNode();
+    const gainA = ctx.createGain();
+    const gainB = ctx.createGain();
+    gainA.gain.value = 1;
+    gainB.gain.value = 0;
 
-      const gainA = ctx.createGain();
-      const gainB = ctx.createGain();
-      gainA.gain.value = 1;
-      gainB.gain.value = 0;
+    const analyser = ctx.createAnalyser();
+    analyser.fftSize = 128;
+    analyser.smoothingTimeConstant = 0.7;
 
-      const analyser = ctx.createAnalyser();
-      analyser.fftSize = 256;
-
-      const bands = [32, 64, 125, 250, 500, 1000, 2000, 4000, 8000, 16000];
-      const eqNodes: BiquadFilterNode[] = [];
-
+    const setupSource = (audio: HTMLAudioElement, gain: GainNode) => {
       try {
-        const eqInput = ctx.createGain();
+        const source = ctx.createMediaElementSource(audio);
+        source.connect(gain);
+      } catch (error) {
+        console.warn('MediaElementSource already connected?', error);
+      }
+    };
 
-        const isMobile = Capacitor.isNativePlatform();
+    setupSource(audioA, gainA);
+    setupSource(audioB, gainB);
+    analyser.connect(ctx.destination);
 
-        // Connect Sources — createMediaElementSource captures the audio
-        // element's output into the Web Audio API graph for analysis.
-        // R2 CORS is configured at backend startup so crossOrigin="anonymous"
-        // works without CORS-tainting on Android.
-        try {
-          const sourceA = ctx.createMediaElementSource(audioA);
-          const sourceB = ctx.createMediaElementSource(audioB);
-          sourceA.connect(gainA);
-          sourceB.connect(gainB);
-        } catch (e) { console.warn("MediaElementSource already connected?", e); }
+    const setupEvents = (audio: HTMLAudioElement) => {
+      audio.onended = null;
+      audio.ontimeupdate = null;
+      audio.onplay = null;
+      audio.onpause = null;
+      let lastProgressUpdateAt = 0;
+      let lastPublishedProgress = 0;
+      let lastPublishedDuration = 0;
 
-        gainA.connect(eqInput);
-        gainB.connect(eqInput);
+      audio.addEventListener('timeupdate', () => {
+        const state = get();
+        const isActiveAudio =
+          (state._audioA === audio && state._activeAudio === 'A')
+          || (state._audioB === audio && state._activeAudio === 'B');
 
-        if (isMobile) {
-          // --- MOBILE PATH (Lightweight) ---
-          // Source -> Gain -> Analyser -> Destination
-          // We bypass EQ, Delay, Reverb, Vinyl to prevent crackling on low-end devices
-          // but keep the analyser for real song-synced visualizations.
+        if (!isActiveAudio) return;
 
-          eqInput.connect(analyser);
-          analyser.connect(ctx.destination);
+        let nextProgress = audio.currentTime;
+        const duration = Math.max(0, audio.duration || 0);
 
-          // Events
-          const setupEvents = (audio: HTMLAudioElement) => {
-            // Remove old listeners to prevent stacking
-            audio.onended = null;
-            audio.ontimeupdate = null;
-            audio.onplay = null;
-            audio.onpause = null;
+        if (state.loopSegmentEnabled && state.loopEndTime > 0 && nextProgress >= state.loopEndTime) {
+          audio.currentTime = state.loopStartTime;
+          if (!audio.paused) audio.play();
+          nextProgress = audio.currentTime;
+        }
 
-            audio.addEventListener('timeupdate', () => {
-              const state = get();
-              if ((state._audioA === audio && state._activeAudio === 'A') ||
-                (state._audioB === audio && state._activeAudio === 'B')) {
-                const duration = Math.max(0, audio.duration || 0);
+        const now = performance.now();
+        const progressChanged = Math.abs(state.progress - nextProgress) >= PROGRESS_EPSILON;
+        const durationChanged = Math.abs(state.duration - duration) >= DURATION_EPSILON;
+        const shouldPublishProgress =
+          progressChanged
+          && (
+            now - lastProgressUpdateAt >= PROGRESS_UPDATE_INTERVAL_MS
+            || nextProgress < lastPublishedProgress
+            || Math.abs(nextProgress - lastPublishedProgress) >= 1
+          );
 
-                // Advanced Segment Looping Mechanism
-                if (state.loopSegmentEnabled && state.loopEndTime > 0 && audio.currentTime >= state.loopEndTime) {
-                   audio.currentTime = state.loopStartTime;
-                   if (!audio.paused) audio.play();
-                }
+        if (shouldPublishProgress || durationChanged) {
+          const nextState: Partial<PlayerState> = {};
 
-                set({ progress: audio.currentTime, duration });
-                const timeLeft = duration - audio.currentTime;
-                if (timeLeft > 0 && timeLeft <= state.crossfadeDuration && !state._isCrossfading && state.queue.length > 0) {
-                  get()._handleCrossfadeAuto();
-                }
-              }
-            });
-            audio.addEventListener('ended', () => {
-              if (get()._isCrossfading) return;
-              if (get().repeat === 'one') {
-                get().recordPlay();
-                audio.currentTime = 0;
-                audio.play();
-                return;
-              }
-              set({ isLoadingNext: true });
-              get().next();
-            });
-            audio.addEventListener('play', async () => {
-              // Resume AudioContext BEFORE anything else.
-              // Calling audio.play() while the ctx is suspended creates a dangling
-              // AudioTrack on Android that ends in a silent OOM / AudioFlinger crash.
-              if (ctx.state === 'suspended') {
-                try { await ctx.resume(); } catch (e) { console.warn('ctx.resume() in play handler failed', e); }
-              }
-              set({ isPlaying: true, lastPlayStart: Date.now() });
-              get().clearIdleTimeout();
-            });
-            audio.addEventListener('pause', () => {
-              get()._logDuration();
-              set({ lastPlayStart: 0 });
-              if (!get()._isCrossfading && !get().isLoadingNext) {
-                set({ isPlaying: false });
-                get().setIdleTimeout();
-              }
-            });
-          };
-          setupEvents(audioA);
-          setupEvents(audioB);
+          if (shouldPublishProgress) {
+            nextState.progress = nextProgress;
+            lastProgressUpdateAt = now;
+            lastPublishedProgress = nextProgress;
+          }
 
-          // Set State (Skip FX nodes, keep analyser)
-          set({
-            audio: audioA,
-            analyser,
-            _audioA: audioA,
-            _audioB: audioB,
-            _gainA: gainA,
-            _gainB: gainB,
-            _audioCtx: ctx,
-            _activeAudio: 'A',
-            _eqNodes: [],
-            _vinylNode: null,
-            _vinylNoiseNode: null,
-            _vinylNoiseGain: null,
-            _delayNode: null,
-            _delayFeedbackNode: null,
-            _convolverNode: null,
-            _reverbGainNode: null
-          });
+          if (durationChanged) {
+            nextState.duration = duration;
+            lastPublishedDuration = duration;
+          }
+
+          if (Object.keys(nextState).length > 0) {
+            set(nextState);
+          }
+        } else if (duration > 0 && Math.abs(lastPublishedDuration - duration) >= DURATION_EPSILON) {
+          lastPublishedDuration = duration;
+        }
+
+        const timeLeft = duration - nextProgress;
+        if (
+          !state.loopSegmentEnabled
+          && state.crossfadeEnabled
+          && state.crossfadeDuration > 0
+          && !isMobilePlaybackEnvironment()
+          && timeLeft > 0
+          && timeLeft <= state.crossfadeDuration
+          && !state._isCrossfading
+          && state.queue.length > 0
+        ) {
+          get()._handleCrossfadeAuto();
+        }
+      });
+
+      audio.addEventListener('ended', () => {
+        if (get()._isCrossfading) return;
+        if (get().repeat === 'one') {
+          get().recordPlay();
+          audio.currentTime = 0;
+          audio.play();
           return;
         }
 
-        // --- DESKTOP PATH (Full FX) ---
-        let lastNode: AudioNode = eqInput;
+        set({ isLoadingNext: true });
+        get().next();
+      });
 
-        bands.forEach((freq, i) => {
-          const filter = ctx.createBiquadFilter();
-          filter.type = 'peaking';
-          filter.frequency.value = freq;
-          filter.Q.value = 1;
-          filter.gain.value = get().eqGains[i];
-          lastNode.connect(filter);
-          eqNodes.push(filter);
-          lastNode = filter;
-        });
-
-        // --- FX NODES ---
-        // 1. Bitcrusher (ScriptProcessor)
-        // 1. Distortion (WaveShaper) - Native Audio Node
-
-        /* bitCrusherNode.onaudioprocess = (e) => {
+      audio.addEventListener('play', async () => {
+        if (ctx.state === 'suspended') {
           try {
-            const depth = get().fxBitCrusher;
-            const active = get().fxBitCrusherActive;
-            const inputBuffer = e.inputBuffer;
-            const outputBuffer = e.outputBuffer;
-
-            // Bypass if inactive or invalid depth
-            if (!active || !depth || depth < 1) {
-              for (let channel = 0; channel < outputBuffer.numberOfChannels; channel++) {
-                outputBuffer.getChannelData(channel).set(inputBuffer.getChannelData(channel));
-              }
-              return;
-            }
-
-            const step = Math.pow(0.5, depth);
-            const invStep = 1 / step;
-
-            for (let channel = 0; channel < outputBuffer.numberOfChannels; channel++) {
-              const inputData = inputBuffer.getChannelData(channel);
-              const outputData = outputBuffer.getChannelData(channel);
-
-              for (let i = 0; i < bufferSize; i++) {
-                outputData[i] = Math.round(inputData[i] * invStep) * step;
-              }
-            }
-          } catch (err) {
-             console.error(err);
-          }
-        }; */
-
-        // 2. Delay
-        // --- FX NODES (Conditional) ---
-        // On Mobile, we skip heavy FX (Reverb, Delay, Vinyl) to prevent audio artifacts ("creaking")
-        // On Mobile, we skip heavy FX (Reverb, Delay, Vinyl) to prevent audio artifacts ("creaking")
-
-        // 2. Delay
-        const delayNode = ctx.createDelay(5.0);
-        const delayFeedback = ctx.createGain();
-        delayNode.delayTime.value = 0;
-        delayFeedback.gain.value = 0;
-
-        // 3. Reverb
-        const convolverNode = ctx.createConvolver();
-        const sampleRate = ctx.sampleRate;
-        const length = sampleRate * 3; // 3 seconds tail
-        const impulse = ctx.createBuffer(2, length, sampleRate);
-        for (let channel = 0; channel < 2; channel++) {
-          const channelData = impulse.getChannelData(channel);
-          for (let i = 0; i < length; i++) {
-            channelData[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / length, 2);
+            await ctx.resume();
+          } catch (error) {
+            console.warn('ctx.resume() in play handler failed', error);
           }
         }
-        convolverNode.buffer = impulse;
 
-        const reverbGain = ctx.createGain();
-        reverbGain.gain.value = 0;
+        set({ isPlaying: true, lastPlayStart: Date.now() });
+        get().clearIdleTimeout();
+      });
 
-        const dryGain = ctx.createGain();
-        dryGain.gain.value = 1;
+      audio.addEventListener('error', (event: Event) => {
+        const error = (event.target as HTMLAudioElement).error;
+        const message = error ? `Code: ${error.code} (${error.message})` : 'Unknown playback error';
+        console.error('Audio Playback Error:', message, audio.src);
+        toast.error(`Audio Error: ${message}`);
 
-        // Vinyl Node
-        const vinylFilter = ctx.createBiquadFilter();
-        vinylFilter.type = 'lowpass';
-        vinylFilter.frequency.value = get().vinylMode ? 2000 : 22000;
+        if (get().isPlaying && !get().isLoadingNext) {
+          get().next();
+        }
+      });
 
-        // --- CONNECT FX CHAIN ---
-        // EQ Output -> Delay Input (Distortion Removed)
-        lastNode.connect(delayNode);
+      audio.addEventListener('pause', () => {
+        get()._logDuration();
+        set({ lastPlayStart: 0 });
+        if (!get()._isCrossfading && !get().isLoadingNext) {
+          set({ isPlaying: false });
+          get().setIdleTimeout();
+        }
+      });
+    };
 
-        // Delay Loop
-        delayNode.connect(delayFeedback);
-        delayFeedback.connect(delayNode);
+    setupEvents(audioA);
+    setupEvents(audioB);
 
-        // EQ Output -> Reverb Input (Distortion Removed)
-        lastNode.connect(convolverNode);
+    set({
+      audio: audioA,
+      analyser: null,
+      _audioA: audioA,
+      _audioB: audioB,
+      _gainA: gainA,
+      _gainB: gainB,
+      _audioCtx: ctx,
+      _analyserNode: analyser,
+      _activeAudio: 'A',
+      _eqNodes: [],
+      _vinylNode: null,
+      _vinylNoiseNode: null,
+      _vinylNoiseGain: null,
+      _delayNode: null,
+      _delayFeedbackNode: null,
+      _convolverNode: null,
+      _reverbGainNode: null
+    });
 
-        // Main signal path (Dry)
-        lastNode.connect(dryGain);
-
-        // Connect Wet Signals to Summing Point (Vinyl)
-        dryGain.connect(vinylFilter);
-        delayNode.connect(vinylFilter);
-        reverbGain.connect(vinylFilter);
-        convolverNode.connect(reverbGain);
-
-        // Update "lastNode" pointer for final connection
-        // (Vinyl is now the last processor before destination)
-        lastNode = vinylFilter;
-
-
-
-
-        const generateNoise = () => {
-          const bufferSize = 2 * ctx.sampleRate;
-          const noiseBuffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
-          const output = noiseBuffer.getChannelData(0);
-          for (let i = 0; i < bufferSize; i++) {
-            const white = Math.random() * 2 - 1;
-            const crackle = Math.random() > 0.999 ? (Math.random() * 2 - 1) * 0.5 : 0;
-            output[i] = (white * 0.01) + crackle;
-          }
-          return noiseBuffer;
-        };
-
-        const noiseNode = ctx.createBufferSource();
-        noiseNode.buffer = generateNoise();
-        noiseNode.loop = true;
-        const noiseGain = ctx.createGain();
-        noiseGain.gain.value = get().vinylMode ? 0.2 : 0;
-        noiseNode.connect(noiseGain);
-        noiseGain.connect(ctx.destination);
-        noiseNode.start();
-
-        lastNode.connect(analyser);
-        analyser.connect(ctx.destination);
-
-        const setupEvents = (audio: HTMLAudioElement) => {
-          // Remove old listeners
-          audio.onended = null;
-          audio.ontimeupdate = null;
-          audio.onplay = null;
-          audio.onpause = null;
-
-          audio.addEventListener('timeupdate', () => {
-            const state = get();
-            if ((state._audioA === audio && state._activeAudio === 'A') ||
-              (state._audioB === audio && state._activeAudio === 'B')) {
-
-              const duration = Math.max(0, audio.duration || 0);
-
-              // Advanced Segment Looping Mechanism
-              if (state.loopSegmentEnabled && state.loopEndTime > 0 && audio.currentTime >= state.loopEndTime) {
-                  audio.currentTime = state.loopStartTime;
-                  if (!audio.paused) audio.play();
-              }
-
-              set({ progress: audio.currentTime, duration });
-
-              const timeLeft = duration - audio.currentTime;
-              // Disable crossfader if segment looping is active, to prevent breaking the loop
-              if (!state.loopSegmentEnabled && timeLeft > 0 && timeLeft <= state.crossfadeDuration && !state._isCrossfading && state.queue.length > 0) {
-                get()._handleCrossfadeAuto();
-              }
-            }
-          });
-
-          audio.addEventListener('ended', () => {
-            if (get()._isCrossfading) return;
-
-            // Handle Repeat One
-            if (get().repeat === 'one') {
-              get().recordPlay();
-              audio.currentTime = 0;
-              audio.play();
-              return;
-            }
-
-            // isLoadingNext prevents the OS from killing the background service.
-            // Subscriber handles notification — no direct call needed here.
-            set({ isLoadingNext: true });
-            get().next();
-          });
-
-          audio.addEventListener('play', async () => {
-            // BUG 5 FIX: Resume AudioContext BEFORE anything else on desktop too.
-            if (ctx.state === 'suspended') {
-              try { await ctx.resume(); } catch (e) { console.warn('ctx.resume() in play handler failed', e); }
-            }
-            set({ isPlaying: true, lastPlayStart: Date.now() });
-            get().clearIdleTimeout();
-          });
-
-          audio.addEventListener('error', (e: Event) => {
-            const error = (e.target as HTMLAudioElement).error;
-            let msg = 'Unknown playback error';
-            if (error) {
-              msg = `Code: ${error.code} (${error.message})`;
-            }
-            console.error('Audio Playback Error:', msg, audio.src);
-            toast.error(`Audio Error: ${msg}`);
-
-            // Auto-skip if playback fails
-            if (get().isPlaying && !get().isLoadingNext) {
-              console.log("Auto-skipping due to error...");
-              // set({ isPlaying: false }); // Optional: stop or skip
-              get().next();
-            }
-          });
-
-          audio.addEventListener('pause', () => {
-            get()._logDuration();
-            set({ lastPlayStart: 0 });
-            // CRITICAL FIX: Do NOT set IsPlaying False if we are loading next song
-            // This prevents the OS from killing the background service
-            if (!get()._isCrossfading && !get().isLoadingNext) {
-              set({ isPlaying: false });
-              get().setIdleTimeout();
-            }
-          });
-        };
-
-        setupEvents(audioA);
-        setupEvents(audioB);
-
-        set({
-          audio: audioA,
-          analyser,
-          _audioA: audioA,
-          _audioB: audioB,
-          _gainA: gainA,
-          _gainB: gainB,
-          _audioCtx: ctx,
-          _eqNodes: eqNodes,
-          _vinylNode: vinylFilter,
-          _vinylNoiseNode: noiseNode,
-          _vinylNoiseGain: noiseGain,
-          _activeAudio: 'A',
-
-          // FX Node Refs
-
-          _delayNode: delayNode,
-          _delayFeedbackNode: delayFeedback,
-          _convolverNode: convolverNode,
-          _reverbGainNode: reverbGain
-        });
-      } catch (e) {
-        console.error("Audio init error:", e);
-      }
+    if (isMobilePlaybackEnvironment() && get().crossfadeEnabled) {
+      set({ crossfadeEnabled: false });
     }
+
+    syncAnalyserRouting(get(), set);
   },
 
   playSong: async (song: Song) => {
@@ -700,21 +554,28 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       // Resolve downloaded version if exists
       const { downloadedSongs } = useOfflineStore.getState();
       const downloadedVersion = downloadedSongs.find(s => s.id === song.id);
-      
+
       const offlineSong = (downloadedVersion || song) as any;
-      let data = { audio: '', cover: '' };
+      const existingAudio = typeof song.audio === 'string' ? song.audio : '';
+      const existingCover = typeof song.cover === 'string' ? song.cover : '';
+      let data = { audio: existingAudio, cover: existingCover };
+      let syncPromise: Promise<{ audio: string; cover: string }> | null = null;
 
       if (!offlineSong.local) {
-        if (!navigator.onLine) {
+        if (!navigator.onLine && !existingAudio) {
             toast.error("You are offline. Play downloaded songs from your Offline Library.");
             set({ isPlaying: false, isLoadingNext: false });
             return;
         }
-        const response = await playerApi.play(song.id);
-        data = {
+
+        syncPromise = playerApi.play(song.id).then((response) => ({
           audio: response.data?.audio ?? '',
           cover: response.data?.cover ?? '',
-        };
+        }));
+
+        if (!existingAudio) {
+          data = await syncPromise;
+        }
       }
 
       if (activeGain && oppositeGain) {
@@ -754,7 +615,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       // BUG 3 FIX: Now that audio.play() has resolved, clear isLoadingNext.
       // This is the safe point — the pause handler can now set isPlaying=false.
       set({
-        currentSong: { ...song, cover: data.cover || song.cover, audio: data.audio },
+        currentSong: { ...song, cover: data.cover || existingCover, audio: data.audio || existingAudio },
         isPlaying: true,
         isLoadingNext: false,
         audio: audio,
@@ -762,6 +623,29 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
         loopStartTime: 0,
         loopEndTime: audio.duration || song.duration || 0
       });
+
+      if (syncPromise && existingAudio) {
+        syncPromise
+          .then((synced) => {
+            if (!synced.audio && !synced.cover) return;
+            set((store) => {
+              if (store.currentSong?.id !== song.id) {
+                return {};
+              }
+
+              return {
+                currentSong: {
+                  ...store.currentSong,
+                  audio: synced.audio || store.currentSong.audio,
+                  cover: synced.cover || store.currentSong.cover,
+                },
+              };
+            });
+          })
+          .catch((error) => {
+            console.error('Playback state sync failed', error);
+          });
+      }
 
       // FIX #1 (BULLETPROOF): Never call MusicControls.create() with duration=0.
       // Strategy:
@@ -890,12 +774,20 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
 
   _handleCrossfadeAuto: async () => {
     if (get()._isCrossfading) return;
-    set({ _isCrossfading: true });
 
     const state = get();
+    if (!state.crossfadeEnabled || state.crossfadeDuration <= 0 || isMobilePlaybackEnvironment()) {
+      return;
+    }
+
+    set({ _isCrossfading: true });
+
     const duration = state.crossfadeDuration;
     const ctx = state._audioCtx;
-    if (!ctx) return;
+    if (!ctx) {
+      set({ _isCrossfading: false });
+      return;
+    }
 
     let nextSong: Song | null = null;
     try {
@@ -907,8 +799,9 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
           title: payload.title,
           artist: payload.artist,
           cover: payload.cover ?? null,
-          audio: payload.audio ?? undefined
+          audio: payload.audio ?? undefined,
         };
+
         const localQueueIndex = state.queue.findIndex((song) => song.id === payload.id);
         if (localQueueIndex >= 0) {
           const remainingQueue = [...state.queue];
@@ -916,12 +809,15 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
           set({ queue: remainingQueue });
         }
       }
-    } catch (e) {
-      console.error("Crossfade: next fetch failed", e);
-      toast.error("Failed to load data");
+    } catch (error) {
+      console.error('Crossfade: next fetch failed', error);
+      toast.error('Failed to load data');
     }
 
-    if (!nextSong) { set({ _isCrossfading: false }); return; }
+    if (!nextSong) {
+      set({ _isCrossfading: false });
+      return;
+    }
 
     const incoming = state._activeAudio === 'A' ? 'B' : 'A';
     const outgoing = state._activeAudio;
@@ -930,81 +826,49 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     const incomingGain = incoming === 'A' ? state._gainA : state._gainB;
     const outgoingGain = outgoing === 'A' ? state._gainA : state._gainB;
 
-    if (!incomingAudio || !outgoingAudio) { set({ _isCrossfading: false }); return; }
-
-    // AI DJ BEATMATCH
-    let startDelay = 0;
-    if (state.aiDjMode) {
-      // 1. Ensure BPMs (Mocking for now if not present)
-      if (!state.currentSong?.bpm) state.currentSong!.bpm = 120 + Math.floor(Math.random() * 20);
-      if (!nextSong.bpm) nextSong.bpm = 120 + Math.floor(Math.random() * 20);
-
-      const bpmA = state.currentSong!.bpm!;
-      const bpmB = nextSong.bpm!;
-
-      // 2. Adjust Pitch (Sync tempo)
-      incomingAudio.playbackRate = bpmA / bpmB;
-
-      // 3. Phase Alignment (Align to next 4-beat bar)
-      const beatDuration = 60 / bpmA;
-      const barDuration = beatDuration * 4;
-      const progress = outgoingAudio.currentTime;
-      const timeInBar = progress % barDuration;
-      startDelay = barDuration - timeInBar;
-
-      console.log(`[AI DJ] Syncing ${nextSong.title} to ${state.currentSong?.title}`);
-      console.log(`[AI DJ] Pitch: ${incomingAudio.playbackRate.toFixed(2)}x | Offset: ${startDelay.toFixed(2)}s`);
-
-      if (startDelay > 2) startDelay = 0; // Guard against long waits
-    } else {
-      incomingAudio.playbackRate = 1.0;
-    }
-
-    if (!nextSong.audio) {
-      console.error("Missing audio for crossfade", nextSong.id);
-      toast.error("Next song failed to load");
+    if (!incomingAudio || !outgoingAudio || !nextSong.audio) {
+      if (!nextSong?.audio) {
+        console.error('Missing audio for crossfade', nextSong?.id);
+        toast.error('Next song failed to load');
+      }
       set({ _isCrossfading: false });
       return;
     }
 
+    incomingAudio.playbackRate = 1;
     incomingAudio.src = nextSong.audio;
     incomingAudio.load();
     if (incomingGain) incomingGain.gain.setValueAtTime(0, ctx.currentTime);
 
-    setTimeout(async () => {
-      try {
-        await incomingAudio.play();
-        const now = ctx.currentTime;
-        const fadeEndTime = now + duration;
+    try {
+      await incomingAudio.play();
+      const now = ctx.currentTime;
+      const fadeEndTime = now + duration;
 
-        // ✨ EQUAL-POWER CROSSFADE: Smooth linear ramps
-        // This prevents volume dips in the middle of the transition
-        // Outgoing: 1 → 0 (fade out)
-        if (outgoingGain) {
-          outgoingGain.gain.cancelScheduledValues(now);
-          outgoingGain.gain.setValueAtTime(1, now);
-          outgoingGain.gain.linearRampToValueAtTime(0, fadeEndTime);
-        }
+      if (outgoingGain) {
+        outgoingGain.gain.cancelScheduledValues(now);
+        outgoingGain.gain.setValueAtTime(1, now);
+        outgoingGain.gain.linearRampToValueAtTime(0, fadeEndTime);
+      }
 
-        // Incoming: 0 → 1 (fade in)
-        if (incomingGain) {
-          incomingGain.gain.cancelScheduledValues(now);
-          incomingGain.gain.setValueAtTime(0, now);
-          incomingGain.gain.linearRampToValueAtTime(1, fadeEndTime);
-        }
+      if (incomingGain) {
+        incomingGain.gain.cancelScheduledValues(now);
+        incomingGain.gain.setValueAtTime(0, now);
+        incomingGain.gain.linearRampToValueAtTime(1, fadeEndTime);
+      }
 
-        set({ currentSong: nextSong, _activeAudio: incoming, audio: incomingAudio, lyrics: null });
+      set({ currentSong: nextSong, _activeAudio: incoming, audio: incomingAudio, lyrics: null });
+      get().fetchLyrics();
 
-        // getting the lyrcis ready so that people who cant wait its ready for them 
-        get().fetchLyrics();
-
-        setTimeout(() => {
-          outgoingAudio.pause();
-          outgoingAudio.currentTime = 0;
-          set({ _isCrossfading: false });
-        }, duration * 1000);
-      } catch (e) { console.error("Crossfade playback error", e); set({ _isCrossfading: false }); }
-    }, startDelay * 1000);
+      setTimeout(() => {
+        outgoingAudio.pause();
+        outgoingAudio.currentTime = 0;
+        set({ _isCrossfading: false });
+      }, duration * 1000);
+    } catch (error) {
+      console.error('Crossfade playback error', error);
+      set({ _isCrossfading: false });
+    }
   },
 
   togglePlay: () => {
@@ -1149,6 +1013,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   },
 
   setVolume: (volume: number) => {
+    if (Math.abs(get().volume - volume) < 0.001) return;
     set({ volume });
     const { _audioA, _audioB } = get();
     if (_audioA) _audioA.volume = volume;
@@ -1158,8 +1023,12 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
 
   setProgress: (progress: number) => {
     const audio = get()._activeAudio === 'A' ? get()._audioA : get()._audioB;
-    if (audio) audio.currentTime = progress;
-    set({ progress });
+    if (audio && Math.abs(audio.currentTime - progress) >= PROGRESS_EPSILON) {
+      audio.currentTime = progress;
+    }
+    if (Math.abs(get().progress - progress) >= PROGRESS_EPSILON) {
+      set({ progress });
+    }
   },
 
   toggleShuffle: async () => {
@@ -1233,7 +1102,10 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     set({ sleepTimerEnd: null, _sleepTimeout: null });
   },
 
-  setVisualizerColor: (color: string | null) => set({ visualizerColor: color }),
+  setVisualizerColor: (color: string | null) => {
+    if (get().visualizerColor === color) return;
+    set({ visualizerColor: color });
+  },
   setEqBand: (index: number, gain: number) => {
     const newGains = [...get().eqGains];
     newGains[index] = gain;
@@ -1241,21 +1113,11 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     const nodes = get()._eqNodes;
     if (nodes[index]) nodes[index].gain.setTargetAtTime(gain, get()._audioCtx?.currentTime || 0, 0.05);
   },
-  setVinylMode: (enabled: boolean) => {
-    set({ vinylMode: enabled });
-    const node = get()._vinylNode;
-    const noiseGain = get()._vinylNoiseGain;
-    const now = get()._audioCtx?.currentTime || 0;
-    if (node) node.frequency.setTargetAtTime(enabled ? 2000 : 22000, now, 0.1);
-    if (noiseGain) noiseGain.gain.setTargetAtTime(enabled ? 0.2 : 0, now, 0.2);
-  },
+  setVinylMode: () => set({ vinylMode: false }),
+  setCrossfadeEnabled: (enabled: boolean) => set({ crossfadeEnabled: enabled && !isMobilePlaybackEnvironment() }),
   setCrossfadeDuration: (duration: number) => set({ crossfadeDuration: duration }),
 
-  setAiDjMode: (enabled: boolean) => {
-    set({ aiDjMode: enabled });
-    const { audio } = get();
-    if (audio && !enabled) audio.playbackRate = 1.0;
-  },
+  setAiDjMode: () => set({ aiDjMode: false }),
 
   fetchLyrics: async () => {
     const { currentSong } = get();

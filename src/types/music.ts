@@ -7,6 +7,7 @@ export interface Song {
   audio?: string;
   genre?: string;
   lyrics?: string;
+  duration?: number;
 }
 
 export interface Playlist {

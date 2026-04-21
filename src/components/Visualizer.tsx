@@ -50,14 +50,26 @@ export default function Visualizer({
     mode = 'wave'
 }: VisualizerProps) {
     const canvasRef = useRef<HTMLCanvasElement>(null);
-    const { analyser, isPlaying } = usePlayerStore();
+    const { analyser, isPlaying, attachVisualizer, detachVisualizer } = usePlayerStore();
     const animationRef = useRef<number>();
     const energyRef = useRef(0); // smooth energy for simulated mode
     const silentFramesRef = useRef(0);
     const analyserDataRef = useRef<Uint8Array | null>(null);
+    const smoothedDataRef = useRef<Float32Array | null>(null);
+    const lastFrameTimeRef = useRef(0);
+    const gradientCacheRef = useRef<{
+        key: string;
+        bar: CanvasGradient | null;
+        fade: CanvasGradient | null;
+    }>({ key: '', bar: null, fade: null });
 
     useEffect(() => {
-        if (!analyser && !isPlaying) {
+        attachVisualizer();
+        return () => detachVisualizer();
+    }, [attachVisualizer, detachVisualizer]);
+
+    useEffect(() => {
+        if (!isPlaying) {
             const canvas = canvasRef.current;
             const ctx = canvas?.getContext('2d');
 
@@ -67,6 +79,12 @@ export default function Visualizer({
 
             return;
         }
+
+        const isMobile = typeof window !== 'undefined'
+            && window.matchMedia('(max-width: 767px)').matches;
+        const frameBudget = isMobile ? 66 : 33;
+        const dprCap = isMobile ? 1 : 1.5;
+        const waveStep = isMobile ? 36 : 24;
 
         const renderFrame = () => {
             const canvas = canvasRef.current;
@@ -82,6 +100,13 @@ export default function Visualizer({
             }
 
             try {
+                const now = performance.now();
+                if (now - lastFrameTimeRef.current < frameBudget) {
+                    animationRef.current = requestAnimationFrame(renderFrame);
+                    return;
+                }
+                lastFrameTimeRef.current = now;
+
                 const cssWidth = canvas.offsetWidth || canvas.clientWidth;
                 const cssHeight = canvas.offsetHeight || canvas.clientHeight;
 
@@ -90,7 +115,7 @@ export default function Visualizer({
                     return;
                 }
 
-                const dpr = Math.min(window.devicePixelRatio || 1, 2);
+                const dpr = Math.min(window.devicePixelRatio || 1, dprCap);
                 const scaledWidth = Math.max(1, Math.floor(cssWidth * dpr));
                 const scaledHeight = Math.max(1, Math.floor(cssHeight * dpr));
 
@@ -147,29 +172,33 @@ export default function Visualizer({
 
                 const width = cssWidth;
                 const height = cssHeight;
+                const cacheKey = `${width}x${height}:${colors.join('|')}`;
+                if (gradientCacheRef.current.key !== cacheKey) {
+                    const barGradient = ctx.createLinearGradient(0, 0, 0, height);
+                    barGradient.addColorStop(0, colors[1] || 'rgba(255,255,255,0.8)');
+                    barGradient.addColorStop(1, colors[0] || 'rgba(255,255,255,0.1)');
+
+                    const fadeGradient = ctx.createLinearGradient(0, height * 0.5, 0, height);
+                    fadeGradient.addColorStop(0, 'rgba(0,0,0,0)');
+                    fadeGradient.addColorStop(1, 'rgba(0,0,0,1)');
+
+                    gradientCacheRef.current = {
+                        key: cacheKey,
+                        bar: barGradient,
+                        fade: fadeGradient,
+                    };
+                }
 
                 ctx.clearRect(0, 0, width, height);
 
                 if (mode === 'bar') {
                     const barWidth = (width / bufferLength) * 2.5;
-                    let barHeight;
                     let x = 0;
+                    ctx.fillStyle = gradientCacheRef.current.bar || colors[0];
 
                     for (let i = 0; i < bufferLength; i++) {
-                        barHeight = (dataArray[i] / 255) * height * 0.8;
-
-                        const gradient = ctx.createLinearGradient(0, height - barHeight, 0, height);
-                        if (colors[2]) {
-                            gradient.addColorStop(0, colors[1]); // Top color (lighter)
-                            gradient.addColorStop(1, colors[0]); // Bottom color (darker)
-                        } else {
-                            gradient.addColorStop(0, 'rgba(255,255,255,0.8)');
-                            gradient.addColorStop(1, 'rgba(255,255,255,0.1)');
-                        }
-
-                        ctx.fillStyle = gradient;
+                        const barHeight = (dataArray[i] / 255) * height * 0.8;
                         ctx.fillRect(x, height - barHeight, barWidth, barHeight);
-
                         x += barWidth + 1;
                     }
                 } else if (mode === 'circle') {
@@ -208,20 +237,26 @@ export default function Visualizer({
 
                 } else {
                     // WAVE MODE (Default)
-                    const bass = dataArray.slice(0, 10).reduce((a, b) => a + b, 0) / 10;
-                    const scale = bass / 255;
+                    if (!smoothedDataRef.current || smoothedDataRef.current.length !== dataArray.length) {
+                        smoothedDataRef.current = new Float32Array(dataArray.length);
+                    }
+                    const smoothedData = smoothedDataRef.current;
 
-                    // Smooth interpolation (reduce jitter)
-                    for (let i = 1; i < dataArray.length; i++) {
-                        dataArray[i] = (dataArray[i] + dataArray[i - 1]) / 2;
+                    let bassTotal = 0;
+                    let intensityTotal = 0;
+                    for (let i = 0; i < dataArray.length; i++) {
+                        const nextValue = smoothedData[i] + (dataArray[i] - smoothedData[i]) * 0.35;
+                        smoothedData[i] = nextValue;
+                        intensityTotal += nextValue;
+                        if (i < 10) bassTotal += nextValue;
                     }
 
-                    // Color reacts to intensity
-                    const intensity = dataArray.reduce((a, b) => a + b, 0) / dataArray.length;
-                    ctx.filter = `brightness(${1 + intensity / 200})`;
+                    const bass = bassTotal / Math.min(10, dataArray.length);
+                    const scale = bass / 255;
+                    const intensity = intensityTotal / dataArray.length;
 
                     // Bass reactive zoom + alpha pulse
-                    ctx.globalAlpha = 0.6 + scale * 0.6;
+                    ctx.globalAlpha = 0.55 + scale * 0.45 + intensity / 700;
                     ctx.save();
                     ctx.translate(width / 2, height / 2);
                     const zoom = 1 + scale * 0.03;
@@ -230,23 +265,24 @@ export default function Visualizer({
 
                     const drawWave = (colorStr: string, offset: number, speed: number, amplitude: number) => {
                         ctx.save();
-                        ctx.shadowBlur = 30;
+                        ctx.shadowBlur = 18;
                         ctx.shadowColor = colorStr;
 
                         ctx.beginPath();
                         ctx.moveTo(0, height);
 
                         const points: { x: number, y: number }[] = [];
+                        const time = now * speed;
 
-                        for (let i = 0; i <= width + 10; i += 20) {
+                        for (let i = 0; i <= width + 10; i += waveStep) {
                             const freqIdx = Math.floor((i / width) * (bufferLength / 2));
                             const smoothData =
-                                (dataArray[freqIdx] * 0.6 +
-                                    (dataArray[freqIdx - 1] || 0) * 0.2 +
-                                    (dataArray[freqIdx + 1] || 0) * 0.2);
+                                (smoothedData[freqIdx] * 0.6 +
+                                    (smoothedData[freqIdx - 1] || 0) * 0.2 +
+                                    (smoothedData[freqIdx + 1] || 0) * 0.2);
 
                             const waveY = height * (1 - offset)
-                                - Math.sin(i * 0.005 + Date.now() * speed) * amplitude
+                                - Math.sin(i * 0.005 + time) * amplitude
                                 - (smoothData * 0.6 * scale * 1.5);
 
                             points.push({ x: i, y: waveY });
@@ -287,23 +323,29 @@ export default function Visualizer({
                         ctx.restore();
                     };
 
-                    // Motion depth (parallax): add a background wave behind everything
-                    drawWave(colors[0], 0.35, 0.0004, 40 + scale * 40);
-                    drawWave(colors[0], 0.25, 0.0008, 30 + scale * 30);
-                    drawWave(colors[1], 0.18, 0.0015, 25 + scale * 25);
-                    drawWave(colors[2], 0.12, 0.0025, 15 + scale * 30);
+                    const waveLayers = isMobile
+                        ? [
+                            [colors[0], 0.28, 0.0008, 28 + scale * 28],
+                            [colors[1], 0.18, 0.0015, 20 + scale * 20],
+                            [colors[2], 0.12, 0.0025, 12 + scale * 24],
+                        ]
+                        : [
+                            [colors[0], 0.35, 0.0004, 40 + scale * 40],
+                            [colors[0], 0.25, 0.0008, 30 + scale * 30],
+                            [colors[1], 0.18, 0.0015, 25 + scale * 25],
+                            [colors[2], 0.12, 0.0025, 15 + scale * 30],
+                        ];
+
+                    for (const [color, offset, speed, amplitude] of waveLayers) {
+                        drawWave(color as string, offset as number, speed as number, amplitude as number);
+                    }
 
                     ctx.restore(); // zoom transform
-                    ctx.filter = 'none';
                     ctx.globalAlpha = 1;
                 }
 
                 // Fade bottom to remove hard edge
-                const fade = ctx.createLinearGradient(0, height * 0.5, 0, height);
-                fade.addColorStop(0, 'rgba(0,0,0,0)');
-                fade.addColorStop(1, 'rgba(0,0,0,1)');
-
-                ctx.fillStyle = fade;
+                ctx.fillStyle = gradientCacheRef.current.fade || 'rgba(0,0,0,0.5)';
                 ctx.fillRect(0, 0, width, height);
                 animationRef.current = requestAnimationFrame(renderFrame);
             } catch (e) {

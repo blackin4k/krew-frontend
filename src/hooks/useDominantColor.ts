@@ -1,6 +1,11 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
 
 export type RgbColor = { r: number; g: number; b: number };
+
+type CoverArtworkColors = {
+    dominant: RgbColor;
+    palette: RgbColor[];
+};
 
 function clampByte(n: number) {
     return Math.max(0, Math.min(255, Math.round(n)));
@@ -35,43 +40,55 @@ function deriveHarmonizedPalette(primary: RgbColor): RgbColor[] {
  * Extract 2–3 representative colors from an image.
  * Uses a small downscaled canvas + coarse quantization histogram (fast, dependency-free).
  */
-export function useCoverPalette(imageUrl: string | null, colorCount: number = 3) {
-    const [palette, setPalette] = useState<RgbColor[] | null>(null);
+const colorCache = new Map<string, CoverArtworkColors | null>();
+const colorPromiseCache = new Map<string, Promise<CoverArtworkColors | null>>();
 
-    useEffect(() => {
-        if (!imageUrl) {
-            setPalette(null);
-            return;
-        }
+async function loadArtworkColors(imageUrl: string, colorCount: number): Promise<CoverArtworkColors | null> {
+    const cached = colorCache.get(imageUrl);
+    if (cached !== undefined) {
+        return cached;
+    }
 
-        let cancelled = false;
+    const existingPromise = colorPromiseCache.get(imageUrl);
+    if (existingPromise) {
+        return existingPromise;
+    }
+
+    const promise = new Promise<CoverArtworkColors | null>((resolve) => {
         const img = new Image();
         img.crossOrigin = "Anonymous";
-        img.src = imageUrl;
+        img.decoding = "async";
+
+        const finish = (value: CoverArtworkColors | null) => {
+            colorCache.set(imageUrl, value);
+            colorPromiseCache.delete(imageUrl);
+            resolve(value);
+        };
 
         img.onload = () => {
             try {
                 const canvas = document.createElement('canvas');
-                const size = 32; // small but enough for palette
+                const size = 32;
                 canvas.width = size;
                 canvas.height = size;
                 const ctx = canvas.getContext('2d', { willReadFrequently: true });
-                if (!ctx) return;
+                if (!ctx) {
+                    finish(null);
+                    return;
+                }
 
                 ctx.drawImage(img, 0, 0, size, size);
                 const data = ctx.getImageData(0, 0, size, size).data;
 
-                // Quantize into 5-bit per channel buckets (32 levels) for a compact histogram.
                 const buckets = new Map<number, number>();
                 for (let i = 0; i < data.length; i += 4) {
                     const a = data[i + 3];
-                    if (a < 200) continue; // skip mostly transparent
+                    if (a < 200) continue;
 
                     const r = data[i];
                     const g = data[i + 1];
                     const b = data[i + 2];
 
-                    // Skip near-black and near-white pixels (often borders/backgrounds).
                     const l = (r * 299 + g * 587 + b * 114) / 1000;
                     if (l < 18 || l > 242) continue;
 
@@ -84,8 +101,6 @@ export function useCoverPalette(imageUrl: string | null, colorCount: number = 3)
 
                 const sorted = [...buckets.entries()].sort((a, b) => b[1] - a[1]);
                 const picked: RgbColor[] = [];
-
-                // Pick distinct-ish colors (avoid near duplicates)
                 const minDist = 40;
                 const dist = (c1: RgbColor, c2: RgbColor) =>
                     Math.hypot(c1.r - c2.r, c1.g - c2.g, c1.b - c2.b);
@@ -102,77 +117,76 @@ export function useCoverPalette(imageUrl: string | null, colorCount: number = 3)
                 }
 
                 if (!picked.length) {
-                    // Fallback: single-pixel dominant
                     ctx.clearRect(0, 0, size, size);
                     ctx.drawImage(img, 0, 0, 1, 1);
                     const [r, g, b] = ctx.getImageData(0, 0, 1, 1).data;
                     picked.push({ r, g, b });
                 }
 
-                // Ensure a cohesive 3-stop palette: dominant + lighter + darker
                 const dominant = picked[0];
                 const harmonized = deriveHarmonizedPalette(dominant);
 
-                // If we found a distinct 2nd color, use it as accent instead of derived light.
                 if (picked[1]) {
                     harmonized[1] = picked[1];
                 }
 
-                // Make sure the "accent" is the brighter one for nicer glow.
                 if (luminance(harmonized[1]) < luminance(harmonized[2])) {
                     const tmp = harmonized[1];
                     harmonized[1] = harmonized[2];
                     harmonized[2] = tmp;
                 }
 
-                if (!cancelled) setPalette(harmonized.slice(0, colorCount));
+                finish({
+                    dominant,
+                    palette: harmonized.slice(0, colorCount),
+                });
             } catch {
-                if (!cancelled) setPalette(null);
+                finish(null);
             }
         };
 
-        img.onerror = () => {
-            if (!cancelled) setPalette(null);
-        };
+        img.onerror = () => finish(null);
+        img.src = imageUrl;
+    });
+
+    colorPromiseCache.set(imageUrl, promise);
+    return promise;
+}
+
+export function useCoverArtworkColors(imageUrl: string | null, colorCount: number = 3) {
+    const [colors, setColors] = useState<CoverArtworkColors | null>(null);
+
+    useEffect(() => {
+        if (!imageUrl) {
+            setColors(null);
+            return;
+        }
+
+        let cancelled = false;
+        loadArtworkColors(imageUrl, colorCount).then((nextColors) => {
+            if (!cancelled) {
+                setColors(nextColors);
+            }
+        });
 
         return () => {
             cancelled = true;
         };
     }, [imageUrl, colorCount]);
 
-    const paletteHex = palette?.map(rgbToHex) ?? null;
+    const paletteHex = colors?.palette?.map(rgbToHex) ?? null;
+    return {
+        dominant: colors?.dominant ?? null,
+        palette: colors?.palette ?? null,
+        paletteHex,
+    };
+}
+
+export function useCoverPalette(imageUrl: string | null, colorCount: number = 3) {
+    const { palette, paletteHex } = useCoverArtworkColors(imageUrl, colorCount);
     return { palette, paletteHex };
 }
 
 export function useDominantColor(imageUrl: string | null) {
-    const [color, setColor] = useState<RgbColor | null>(null);
-
-    useEffect(() => {
-        if (!imageUrl) {
-            setColor(null);
-            return;
-        }
-
-        const img = new Image();
-        img.crossOrigin = "Anonymous";
-        img.src = imageUrl;
-
-        img.onload = () => {
-            try {
-                const canvas = document.createElement('canvas');
-                canvas.width = 1;
-                canvas.height = 1;
-                const ctx = canvas.getContext('2d');
-                if (!ctx) return;
-
-                ctx.drawImage(img, 0, 0, 1, 1);
-                const [r, g, b] = ctx.getImageData(0, 0, 1, 1).data;
-                setColor({ r, g, b });
-            } catch {
-                setColor(null);
-            }
-        };
-    }, [imageUrl]);
-
-    return color;
+    return useCoverArtworkColors(imageUrl, 3).dominant;
 }

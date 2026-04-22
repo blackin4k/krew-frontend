@@ -129,12 +129,15 @@ export default function Visualizer({
                 // ── frequency data ───────────────────────────────────────────
                 let data: Uint8Array;
                 if (analyser) {
-                    if (!rawRef.current || rawRef.current.length!==bufLen)
-                        rawRef.current = new Uint8Array(bufLen);
-                    analyser.getByteFrequencyData(rawRef.current as Uint8Array<ArrayBuffer>);
-                    const peak = rawRef.current.reduce((m,v)=>v>m?v:m,0);
-                    if (peak>5) { silentRef.current=0; data=rawRef.current; }
-                    else { silentRef.current++; data=silentRef.current<=5?rawRef.current:simData(bufLen,E); }
+                    let raw = rawRef.current;
+                    if (!raw || raw.length!==bufLen) {
+                        raw = new Uint8Array(bufLen);
+                        rawRef.current = raw;
+                    }
+                    analyser.getByteFrequencyData(raw as any);
+                    const peak = raw.reduce((m,v)=>v>m?v:m,0);
+                    if (peak>5) { silentRef.current=0; data=raw; }
+                    else { silentRef.current++; data=silentRef.current<=5?raw:simData(bufLen,E); }
                 } else { data=simData(bufLen,E); }
 
                 // ── dual-rate smoothing (snappy attack, smooth release) ───────

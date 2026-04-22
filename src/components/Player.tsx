@@ -542,7 +542,7 @@ export default function Player() {
 
       const request = new castWindow.chrome.cast.media.LoadRequest(mediaInfo)
       request.autoplay = true
-      request.currentTime = progress || 0
+      request.currentTime = usePlayerStore.getState().progress || 0
 
       await session.loadMedia(request)
       // Pause local playback when casting starts
@@ -867,7 +867,7 @@ const ExpandedPlayerComponent = memo(({
               <LyricsOverlay
                 lyrics={lyrics}
                 progress={progress}
-                onSeek={handleSeekCommit}
+                onSeek={(time) => handleSeekCommit([time])}
                 coverUrl={coverUrl}
                 uiColor={uiColor}
               />
@@ -1009,14 +1009,7 @@ const ExpandedPlayerComponent = memo(({
                     >
                       {loopSegmentEnabled && duration && (
                         <>
-                          {/* Loop Range Highlight */}
-                          <div
-                            className="absolute top-1/2 h-[3px] rounded-full bg-white/[0.18] -translate-y-1/2 transition-all pointer-events-none"
-                            style={{
-                              left: `${(loopStartTime / duration) * 100}%`,
-                              width: `${((loopEndTime - loopStartTime) / duration) * 100}%`
-                            }}
-                          />
+
 
                           {/* Start Handle Wrapper */}
                           <div

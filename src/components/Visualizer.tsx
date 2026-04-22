@@ -151,18 +151,20 @@ export default function Visualizer({
 
                 for (let i=0; i<bufLen; i++) {
                     const v = data[i];
-                    // fast buffer for attack (0.4), slow for release (0.12)
-                    const lerpRate = v > smFast[i] ? 0.4 : 0.12;
+                    // Very fast attack (0.6) so transients hit immediately;
+                    // slow release (0.10) so the wave doesn't snap down.
+                    const lerpRate = v > smFast[i] ? 0.6 : 0.10;
                     smFast[i] += (v - smFast[i]) * lerpRate;
-                    // slower global smooth for wave shapes
-                    sm[i]     += (v - sm[i]) * 0.18;
+                    // Slightly smoothed version for wave shape (less jitter)
+                    sm[i]     += (v - sm[i]) * 0.28;
                     if (i < bassEnd)       bassSum  += smFast[i];
                     else if (i < midEnd)   midSum   += smFast[i];
                     else                   highSum  += smFast[i];
                 }
                 const bass  = (bassSum / bassEnd) / 255;
                 const mid   = (midSum  / (midEnd-bassEnd)) / 255;
-                const bassE = bass * E;
+                // Square bass to make quiet passages calm, loud passages explosive
+                const bassE = bass * bass * E * 2.2;
                 const midE  = mid  * E;
 
                 ctx.clearRect(0, 0, W, H);
@@ -187,14 +189,23 @@ export default function Visualizer({
                         const pts:[number,number][] = [];
 
                         for (let x=-stepPx; x<=W+stepPx; x+=stepPx) {
-                            const fi   = Math.max(0, Math.min(bufLen-1, Math.floor((x/W)*(bufLen*0.55))));
-                            const freq = sm[fi] / 255;
+                            // Map x → frequency bin (use lower 65% of spectrum where music lives)
+                            const fi   = Math.max(0, Math.min(bufLen-1, Math.floor((x/W)*(bufLen*0.65))));
+                            // smFast for snappy per-point reactivity; sm for gentle sway underneath
+                            const freqFast = smFast[fi] / 255;
+                            const freqSlow = sm[fi]     / 255;
                             const y    = baseY
-                                - Math.sin(x*0.0048 + T)          * amp * (0.5 + E*0.5)
-                                - Math.sin(x*0.0110 - T*0.65)     * amp * 0.28 * E
-                                - Math.sin(x*0.0022 + T*0.3)      * amp * 0.18 * midE
-                                - freq * amp * 1.8 * E
-                                - bassE * amp * 1.1;
+                                // Slow organic sine sway (always present)
+                                - Math.sin(x*0.0048 + T)      * amp * (0.4 + E*0.4)
+                                - Math.sin(x*0.0110 - T*0.65) * amp * 0.22 * E
+                                // Mid-freq detail layer
+                                - Math.sin(x*0.0022 + T*0.3)  * amp * 0.15 * midE
+                                // 🎵 REAL AUDIO: fast buffer drives the main displacement
+                                - freqFast * amp * 3.5 * E
+                                // Slow buffer adds smoothness under the fast spikes
+                                - freqSlow * amp * 1.0 * E
+                                // 🥁 BASS: squared for explosive hits on kicks/bass notes
+                                - bassE * amp * 2.8;
                             pts.push([x, y]);
                         }
 
@@ -243,15 +254,17 @@ export default function Visualizer({
                     };
 
                     if (mob) {
-                        drawWave(r0,g0,b0,  0.32, 0.00050, 30+bassE*28,  0.60, 0,  false);
-                        drawWave(r1,g1,b1,  0.20, 0.00105, 24+bassE*22,  0.70, 0,  false);
-                        drawWave(r2,g2,b2,  0.11, 0.00200, 18+bassE*16,  0.80, 0,  true);
+                        // Mobile: 3 layers, higher base amp so motion is visible
+                        drawWave(r0,g0,b0,  0.32, 0.00050, 38+bassE*40,  0.65, 0,  false);
+                        drawWave(r1,g1,b1,  0.20, 0.00105, 30+bassE*34,  0.75, 0,  false);
+                        drawWave(r2,g2,b2,  0.11, 0.00200, 22+bassE*28,  0.85, 0,  true);
                     } else {
-                        drawWave(r0,g0,b0,  0.44, 0.00028, 52+bassE*55,  0.42, 14, false);
-                        drawWave(r1,g1,b1,  0.34, 0.00058, 44+bassE*46,  0.52, 18, false);
-                        drawWave(r0,g0,b0,  0.25, 0.00092, 36+bassE*38,  0.58, 14, false);
-                        drawWave(r2,g2,b2,  0.17, 0.00148, 28+bassE*30,  0.68, 22, false);
-                        drawWave(r1,g1,b1,  0.09, 0.00238, 20+bassE*22,  0.78, 18, true);
+                        // Desktop: 5 layers, large base amps for dramatic movement
+                        drawWave(r0,g0,b0,  0.44, 0.00028, 60+bassE*70,  0.45, 16, false);
+                        drawWave(r1,g1,b1,  0.34, 0.00058, 50+bassE*60,  0.55, 20, false);
+                        drawWave(r0,g0,b0,  0.25, 0.00092, 42+bassE*50,  0.60, 16, false);
+                        drawWave(r2,g2,b2,  0.17, 0.00148, 34+bassE*42,  0.70, 24, false);
+                        drawWave(r1,g1,b1,  0.09, 0.00238, 26+bassE*34,  0.80, 20, true);
                     }
 
                     // ── pulse rings on bass transients ──

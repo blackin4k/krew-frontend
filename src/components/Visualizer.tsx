@@ -8,418 +8,453 @@ interface VisualizerProps {
     mode?: 'wave' | 'bar' | 'circle';
 }
 
-/**
- * Generate simulated frequency data when a real AnalyserNode isn't available.
- * Uses layered sine waves at different speeds/phases to create organic-looking
- * audio-reactive visuals. The energy parameter (0→1) controls amplitude so
- * we can smoothly fade in/out when play state changes.
- */
+// ─── Colour helpers ──────────────────────────────────────────────────────────
+
+/** Parse any rgba/rgb/hex string → [r,g,b] (0-255). Falls back to white. */
+function parseRGB(c: string): [number, number, number] {
+    const rgba = c.match(/rgba?\(\s*(\d+)[,\s]+(\d+)[,\s]+(\d+)/);
+    if (rgba) return [+rgba[1], +rgba[2], +rgba[3]];
+    const hex = c.match(/^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i);
+    if (hex) return [parseInt(hex[1], 16), parseInt(hex[2], 16), parseInt(hex[3], 16)];
+    return [255, 255, 255];
+}
+
+function rgba(r: number, g: number, b: number, a: number) {
+    return `rgba(${r},${g},${b},${Math.max(0, Math.min(1, a))})`;
+}
+
+// ─── Simulated frequency data ────────────────────────────────────────────────
+
 function generateSimulatedData(bufferLength: number, energy: number): Uint8Array {
     const data = new Uint8Array(bufferLength);
-    const t = Date.now() / 1000; // seconds
-
+    const t = Date.now() / 1000;
     for (let i = 0; i < bufferLength; i++) {
-        const norm = i / bufferLength; // 0..1
-
-        // Bass emphasis: more energy in low bins
-        const bassBoost = Math.max(0, 1 - norm * 2.5);
-
-        // Layered sine waves at different frequencies for organic movement
-        const wave1 = Math.sin(t * 2.3 + i * 0.15) * 0.35;
-        const wave2 = Math.sin(t * 3.7 + i * 0.08) * 0.25;
-        const wave3 = Math.sin(t * 1.1 + i * 0.22) * 0.15;
-        const wave4 = Math.sin(t * 5.3 + i * 0.04) * 0.12;
-        const pulse = Math.sin(t * 0.8) * 0.13; // slow pulse
-
-        const combined = 0.45 + wave1 + wave2 + wave3 + wave4 + pulse + bassBoost * 0.3;
-        const clamped = Math.max(0, Math.min(1, combined));
-
-        data[i] = Math.floor(clamped * 255 * energy);
+        const norm = i / bufferLength;
+        const bassBoost = Math.max(0, 1 - norm * 2.8);
+        const w1 = Math.sin(t * 2.1 + i * 0.14) * 0.38;
+        const w2 = Math.sin(t * 3.9 + i * 0.07) * 0.26;
+        const w3 = Math.sin(t * 1.3 + i * 0.21) * 0.16;
+        const w4 = Math.sin(t * 5.7 + i * 0.035) * 0.11;
+        const pulse = Math.sin(t * 0.7) * 0.14;
+        const combined = 0.42 + w1 + w2 + w3 + w4 + pulse + bassBoost * 0.35;
+        data[i] = Math.floor(Math.max(0, Math.min(1, combined)) * 255 * energy);
     }
     return data;
 }
 
-export default function Visualizer({
-    className = "absolute bottom-0 left-0 w-full h-[400px] pointer-events-none z-0 opacity-90",
-    colors = [
-        'rgba(255,255,255,0.25)',
-        'rgba(255,255,255,0.5)',
-        'rgba(255,255,255,0.8)'
-    ],
-    height,
-    mode = 'wave'
-}: VisualizerProps) {
-    const canvasRef = useRef<HTMLCanvasElement>(null);
-    const analyser = usePlayerStore((state) => state.analyser);
-    const isPlaying = usePlayerStore((state) => state.isPlaying);
-    const performanceMode = usePlayerStore((state) => state.performanceMode);
-    const attachVisualizer = usePlayerStore((state) => state.attachVisualizer);
-    const detachVisualizer = usePlayerStore((state) => state.detachVisualizer);
-    const animationRef = useRef<number>();
-    const energyRef = useRef(0); // smooth energy for simulated mode
-    const silentFramesRef = useRef(0);
-    const analyserDataRef = useRef<Uint8Array | null>(null);
-    const smoothedDataRef = useRef<Float32Array | null>(null);
-    const lastFrameTimeRef = useRef(0);
-    const isCanvasVisibleRef = useRef(true);
-    const gradientCacheRef = useRef<{
-        key: string;
-        bar: CanvasGradient | null;
-        fade: CanvasGradient | null;
-    }>({ key: '', bar: null, fade: null });
+// ─── Component ───────────────────────────────────────────────────────────────
 
+export default function Visualizer({
+    className = 'absolute bottom-0 left-0 w-full h-[400px] pointer-events-none z-0',
+    colors = ['rgba(180,120,255,0.6)', 'rgba(100,160,255,0.8)', 'rgba(255,100,200,1)'],
+    height,
+    mode = 'wave',
+}: VisualizerProps) {
+    const canvasRef            = useRef<HTMLCanvasElement>(null);
+    const analyser             = usePlayerStore(s => s.analyser);
+    const isPlaying            = usePlayerStore(s => s.isPlaying);
+    const performanceMode      = usePlayerStore(s => s.performanceMode);
+    const attachVisualizer     = usePlayerStore(s => s.attachVisualizer);
+    const detachVisualizer     = usePlayerStore(s => s.detachVisualizer);
+
+    const animRef              = useRef<number>();
+    const energyRef            = useRef(0);
+    const silentRef            = useRef(0);
+    const rawDataRef           = useRef<Uint8Array | null>(null);
+    const smoothRef            = useRef<Float32Array | null>(null);
+    const lastFrameRef         = useRef(0);
+    const visibleRef           = useRef(true);
+    // pulse ring state
+    const ringsRef             = useRef<{ r: number; a: number; speed: number }[]>([]);
+    const lastBassRef          = useRef(0);
+
+    // Register this visualizer so the store wires the AnalyserNode
     useEffect(() => {
         attachVisualizer();
         return () => detachVisualizer();
     }, [attachVisualizer, detachVisualizer]);
 
     useEffect(() => {
-        const isMobile = performanceMode === 'lite'
-            || (typeof window !== 'undefined' && window.matchMedia('(max-width: 767px)').matches);
-        
-        // 20fps for lite mode, 30fps for mobile, 60fps for desktop
-        const frameBudget = performanceMode === 'lite' ? 48 : isMobile ? 32 : 16;
-        const dprCap = isMobile ? 1 : 1.5;
-        const waveStep = isMobile ? 48 : 32;
-        let isDisposed = false;
+        const isMobile   = performanceMode === 'lite'
+            || (typeof window !== 'undefined' && window.matchMedia('(max-width:767px)').matches);
+        const frameBudget = performanceMode === 'lite' ? 50 : isMobile ? 33 : 16; // ~20 / 30 / 60 fps
+        const dprCap      = isMobile ? 1 : 1.5;
+        const waveStep    = isMobile ? 6 : 4;   // % of width between wave samples
+        let disposed      = false;
+
+        // Parsed RGB triples for the three colour slots
+        const [r0, g0, b0] = parseRGB(colors[0] ?? 'rgba(180,120,255,1)');
+        const [r1, g1, b1] = parseRGB(colors[1] ?? 'rgba(100,160,255,1)');
+        const [r2, g2, b2] = parseRGB(colors[2] ?? 'rgba(255,100,200,1)');
 
         const canRender = () => {
-            const documentVisible = typeof document === 'undefined' || document.visibilityState === 'visible';
-            return !isDisposed && isCanvasVisibleRef.current && documentVisible;
+            const docVis = typeof document === 'undefined' || document.visibilityState === 'visible';
+            return !disposed && visibleRef.current && docVis;
         };
 
-        const scheduleNextFrame = () => {
-            if (!canRender()) {
-                animationRef.current = undefined;
-                return;
-            }
-            animationRef.current = requestAnimationFrame(renderFrame);
+        const schedule = () => {
+            if (canRender()) animRef.current = requestAnimationFrame(frame);
+            else animRef.current = undefined;
         };
 
-        const renderFrame = () => {
-            if (!canRender()) {
-                animationRef.current = undefined;
-                return;
-            }
+        // ── Main render frame ───────────────────────────────────────────────
+        const frame = () => {
+            if (!canRender()) { animRef.current = undefined; return; }
 
             const canvas = canvasRef.current;
-            if (!canvas) {
-                scheduleNextFrame();
-                return;
-            }
-
+            if (!canvas) { schedule(); return; }
             const ctx = canvas.getContext('2d');
-            if (!ctx) {
-                scheduleNextFrame();
-                return;
-            }
+            if (!ctx) { schedule(); return; }
 
             try {
+                // Frame-rate cap
                 const now = performance.now();
-                if (now - lastFrameTimeRef.current < frameBudget) {
-                    scheduleNextFrame();
-                    return;
-                }
-                lastFrameTimeRef.current = now;
+                if (now - lastFrameRef.current < frameBudget) { schedule(); return; }
+                lastFrameRef.current = now;
 
-                const cssWidth = canvas.offsetWidth || canvas.clientWidth;
-                const cssHeight = canvas.offsetHeight || canvas.clientHeight;
-
-                if (!cssWidth || !cssHeight) {
-                    scheduleNextFrame();
-                    return;
-                }
+                // Canvas sizing
+                const cw = canvas.offsetWidth  || canvas.clientWidth;
+                const ch = canvas.offsetHeight || canvas.clientHeight;
+                if (!cw || !ch) { schedule(); return; }
 
                 const dpr = Math.min(window.devicePixelRatio || 1, dprCap);
-                const scaledWidth = Math.max(1, Math.floor(cssWidth * dpr));
-                const scaledHeight = Math.max(1, Math.floor(cssHeight * dpr));
-
-                if (canvas.width !== scaledWidth || canvas.height !== scaledHeight) {
-                    canvas.width = scaledWidth;
-                    canvas.height = scaledHeight;
+                const pw  = Math.max(1, Math.floor(cw * dpr));
+                const ph  = Math.max(1, Math.floor(ch * dpr));
+                if (canvas.width !== pw || canvas.height !== ph) {
+                    canvas.width  = pw;
+                    canvas.height = ph;
                 }
-
                 ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-                const bufferLength = analyser ? analyser.frequencyBinCount : 128;
+                const W = cw, H = ch;
+                const bufLen = analyser ? analyser.frequencyBinCount : 128;
 
-                // Handle energy state for smooth fading
-                const targetEnergy = isPlaying ? 1 : 0;
-                // Fast attack (0.3) when playing so visuals appear immediately;
-                // slow decay (0.05) when pausing for a nice fade-out effect.
-                const lerpFactor = isPlaying ? 0.3 : 0.05;
-                energyRef.current += (targetEnergy - energyRef.current) * lerpFactor;
+                // ── Energy envelope ─────────────────────────────────────────
+                const targetE  = isPlaying ? 1 : 0;
+                const lerpE    = isPlaying ? 0.3 : 0.04;
+                energyRef.current += (targetE - energyRef.current) * lerpE;
+                const E = energyRef.current;
 
-                // If completely silent and no energy, clear and wait
-                if (energyRef.current < 0.001 && !isPlaying) {
-                    ctx.clearRect(0, 0, cssWidth, cssHeight);
-                    scheduleNextFrame();
+                if (E < 0.001 && !isPlaying) {
+                    ctx.clearRect(0, 0, W, H);
+                    schedule();
                     return;
                 }
 
-                let dataArray: Uint8Array;
+                // ── Get frequency data ──────────────────────────────────────
+                let data: Uint8Array;
                 if (analyser) {
-                    if (!analyserDataRef.current || analyserDataRef.current.length !== bufferLength) {
-                        analyserDataRef.current = new Uint8Array(bufferLength);
-                    }
-
-                    analyser.getByteFrequencyData(analyserDataRef.current as any);
-
-                    let peak = 0;
-                    for (let i = 0; i < analyserDataRef.current.length; i++) {
-                        if (analyserDataRef.current[i] > peak) peak = analyserDataRef.current[i];
-                    }
-
-                    if (peak > 5) { // Small threshold to avoid floor noise
-                        silentFramesRef.current = 0;
-                        dataArray = analyserDataRef.current;
-                    } else {
-                        silentFramesRef.current += 1;
-                        // Fall back to simulation quickly (5 frames ≈ ~160ms)
-                        // so CORS-tainted or slow-starting audio still shows visuals
-                        if (silentFramesRef.current <= 5) {
-                            dataArray = analyserDataRef.current;
-                        } else {
-                            dataArray = generateSimulatedData(bufferLength, energyRef.current);
-                        }
+                    if (!rawDataRef.current || rawDataRef.current.length !== bufLen)
+                        rawDataRef.current = new Uint8Array(bufLen);
+                    analyser.getByteFrequencyData(rawDataRef.current);
+                    const peak = rawDataRef.current.reduce((m, v) => v > m ? v : m, 0);
+                    if (peak > 5) { silentRef.current = 0; data = rawDataRef.current; }
+                    else {
+                        silentRef.current++;
+                        data = silentRef.current <= 5
+                            ? rawDataRef.current
+                            : generateSimulatedData(bufLen, E);
                     }
                 } else {
-                    dataArray = generateSimulatedData(bufferLength, energyRef.current);
+                    data = generateSimulatedData(bufLen, E);
                 }
 
-                const width = cssWidth;
-                const height = cssHeight;
-                const cacheKey = `${width}x${height}:${colors.join('|')}`;
-                if (gradientCacheRef.current.key !== cacheKey) {
-                    const barGradient = ctx.createLinearGradient(0, 0, 0, height);
-                    barGradient.addColorStop(0, colors[1] || 'rgba(255,255,255,0.8)');
-                    barGradient.addColorStop(1, colors[0] || 'rgba(255,255,255,0.1)');
-
-                    const fadeGradient = ctx.createLinearGradient(0, height * 0.5, 0, height);
-                    fadeGradient.addColorStop(0, 'rgba(0,0,0,0)');
-                    fadeGradient.addColorStop(1, 'rgba(0,0,0,1)');
-
-                    gradientCacheRef.current = {
-                        key: cacheKey,
-                        bar: barGradient,
-                        fade: fadeGradient,
-                    };
+                // ── Smooth frequency data ───────────────────────────────────
+                if (!smoothRef.current || smoothRef.current.length !== bufLen)
+                    smoothRef.current = new Float32Array(bufLen);
+                const sm = smoothRef.current;
+                let bassSum = 0, totalSum = 0;
+                for (let i = 0; i < bufLen; i++) {
+                    sm[i] += (data[i] - sm[i]) * 0.22;
+                    totalSum += sm[i];
+                    if (i < 8) bassSum += sm[i];
                 }
+                const bass      = (bassSum / 8) / 255;           // 0-1
+                const intensity = (totalSum / bufLen) / 255;      // 0-1
+                const bassE     = bass * E;                       // energy-gated bass
 
-                ctx.clearRect(0, 0, width, height);
+                // ── Clear ────────────────────────────────────────────────────
+                ctx.clearRect(0, 0, W, H);
 
-                if (mode === 'bar') {
-                    const barWidth = (width / bufferLength) * 2.5;
-                    let x = 0;
-                    ctx.fillStyle = gradientCacheRef.current.bar || colors[0];
+                // ════════════════════════════════════════════════════════════
+                // WAVE MODE
+                // ════════════════════════════════════════════════════════════
+                if (mode !== 'bar' && mode !== 'circle') {
 
-                    for (let i = 0; i < bufferLength; i++) {
-                        const barHeight = (dataArray[i] / 255) * height * 0.8 * energyRef.current;
-                        if (barHeight > 0.5) {
-                            ctx.fillRect(x, height - barHeight, barWidth, barHeight);
+                    // Use additive blending for neon glow stacking
+                    ctx.globalCompositeOperation = 'lighter';
+
+                    // ── Draw one wave layer ─────────────────────────────────
+                    const drawWave = (
+                        cr: number, cg: number, cb: number,  // colour
+                        yFrac: number,                        // vertical position 0-1 from bottom
+                        speed: number,                        // horizontal scroll speed
+                        amp: number,                          // amplitude px
+                        fillAlpha: number,                    // fill opacity
+                        glowAlpha: number,                    // glow/stroke opacity
+                        glowSize: number,                     // shadow blur
+                    ) => {
+                        const baseY = H * (1 - yFrac);
+                        const t = now * speed;
+
+                        // Build wave points
+                        const pts: [number, number][] = [];
+                        const stepPx = Math.max(1, Math.floor(W * waveStep / 100));
+                        for (let x = -stepPx; x <= W + stepPx; x += stepPx) {
+                            const fi   = Math.floor((x / W) * (bufLen * 0.6));
+                            const freq = sm[Math.max(0, Math.min(bufLen - 1, fi))] / 255;
+                            const y    = baseY
+                                - Math.sin(x * 0.005 + t) * amp * (0.5 + E * 0.5)
+                                - Math.sin(x * 0.011 - t * 0.7) * amp * 0.3 * E
+                                - freq * amp * 1.6 * E
+                                - bassE * amp * 0.9;
+                            pts.push([x, y]);
                         }
-                        x += barWidth + 1;
+
+                        // Smooth catmull-rom path
+                        ctx.beginPath();
+                        ctx.moveTo(pts[0][0], pts[0][1]);
+                        for (let i = 0; i < pts.length - 1; i++) {
+                            const mx = (pts[i][0] + pts[i + 1][0]) / 2;
+                            const my = (pts[i][1] + pts[i + 1][1]) / 2;
+                            ctx.quadraticCurveTo(pts[i][0], pts[i][1], mx, my);
+                        }
+                        // Close path BELOW the canvas — eliminates any hard bottom edge
+                        ctx.lineTo(W + stepPx, H + 40);
+                        ctx.lineTo(-stepPx, H + 40);
+                        ctx.closePath();
+
+                        // Vertical gradient fill: transparent at wave crest → colour at bottom
+                        const grad = ctx.createLinearGradient(0, baseY - amp * 2, 0, H + 40);
+                        grad.addColorStop(0,   rgba(cr, cg, cb, 0));
+                        grad.addColorStop(0.35, rgba(cr, cg, cb, fillAlpha * 0.4 * E));
+                        grad.addColorStop(1,   rgba(cr, cg, cb, fillAlpha * E));
+                        ctx.fillStyle = grad;
+
+                        // Glow on the stroke edge
+                        if (!isMobile && glowSize > 0) {
+                            ctx.shadowBlur  = glowSize * (1 + bassE * 1.5);
+                            ctx.shadowColor = rgba(cr, cg, cb, glowAlpha);
+                        }
+                        ctx.fill();
+                        ctx.shadowBlur = 0;
+                    };
+
+                    if (isMobile) {
+                        // 3 layers for mobile — keeps GPU load low
+                        drawWave(r0, g0, b0,  0.30, 0.00055, 28 + bassE * 22,  0.55, 0.9,  0);
+                        drawWave(r1, g1, b1,  0.20, 0.00110, 22 + bassE * 18,  0.65, 1.0,  0);
+                        drawWave(r2, g2, b2,  0.12, 0.00200, 16 + bassE * 14,  0.75, 1.0,  0);
+                    } else {
+                        // 5 layers for desktop — rich depth
+                        drawWave(r0, g0, b0,  0.42, 0.00030, 48 + bassE * 50,  0.40, 0.7, 18);
+                        drawWave(r1, g1, b1,  0.32, 0.00060, 40 + bassE * 42,  0.50, 0.9, 22);
+                        drawWave(r0, g0, b0,  0.24, 0.00095, 32 + bassE * 34,  0.55, 0.8, 16);
+                        drawWave(r2, g2, b2,  0.16, 0.00150, 24 + bassE * 26,  0.65, 1.0, 24);
+                        drawWave(r1, g1, b1,  0.09, 0.00240, 16 + bassE * 18,  0.75, 1.0, 20);
                     }
-                } else if (mode === 'circle') {
-                    // Circular visualizer
-                    const centerX = width / 2;
-                    const centerY = height / 2;
-                    const radius = Math.min(width, height) / 2.5;
 
-                    ctx.beginPath();
-                    ctx.arc(centerX, centerY, radius, 0, 2 * Math.PI);
-                    ctx.strokeStyle = colors[0] || 'rgba(255,255,255,0.1)';
-                    ctx.lineWidth = 1;
-                    ctx.stroke();
+                    // ── Bass-reactive pulse rings ─────────────────────────────
+                    if (!isMobile) {
+                        // Spawn a new ring on each bass transient
+                        if (bassE > 0.45 && bass > lastBassRef.current + 0.12) {
+                            ringsRef.current.push({ r: 0, a: 0.5 * E, speed: 1.4 + bass * 2 });
+                        }
+                        lastBassRef.current = bass;
 
-                    const bars = isMobile ? 40 : 80;
-                    const step = (Math.PI * 2) / bars;
+                        const rings = ringsRef.current;
+                        for (let i = rings.length - 1; i >= 0; i--) {
+                            const ring = rings[i];
+                            ring.r += ring.speed * 2.5;
+                            ring.a -= 0.012;
+                            if (ring.a <= 0) { rings.splice(i, 1); continue; }
+
+                            const cx = W / 2, cy = H * 0.75;
+                            ctx.beginPath();
+                            ctx.ellipse(cx, cy, ring.r * 2.2, ring.r * 0.55, 0, 0, Math.PI * 2);
+                            ctx.strokeStyle = rgba(r1, g1, b1, ring.a);
+                            ctx.lineWidth   = 1.5;
+                            ctx.shadowBlur  = 12;
+                            ctx.shadowColor = rgba(r1, g1, b1, ring.a * 0.8);
+                            ctx.stroke();
+                            ctx.shadowBlur  = 0;
+                        }
+                    }
+
+                    ctx.globalCompositeOperation = 'source-over';
+
+                    // ── Feathered bottom mask ───────────────────────────────
+                    // Fades the bottom ~30% so there is zero hard line
+                    const mask = ctx.createLinearGradient(0, H * 0.72, 0, H);
+                    mask.addColorStop(0, 'rgba(0,0,0,0)');
+                    mask.addColorStop(1, 'rgba(0,0,0,1)');
+                    ctx.globalCompositeOperation = 'destination-out';
+                    ctx.fillStyle = mask;
+                    ctx.fillRect(0, H * 0.72, W, H * 0.28);
+                    ctx.globalCompositeOperation = 'source-over';
+
+                    // ── Subtle horizontal shimmer line at wave crest ─────────
+                    if (!isMobile && E > 0.3) {
+                        const shimmerY = H * (1 - 0.28) - bassE * 40;
+                        const sg = ctx.createLinearGradient(0, 0, W, 0);
+                        sg.addColorStop(0,    rgba(r2, g2, b2, 0));
+                        sg.addColorStop(0.35, rgba(r2, g2, b2, 0.35 * E));
+                        sg.addColorStop(0.5,  rgba(r1, g1, b1, 0.65 * E));
+                        sg.addColorStop(0.65, rgba(r2, g2, b2, 0.35 * E));
+                        sg.addColorStop(1,    rgba(r2, g2, b2, 0));
+                        ctx.strokeStyle = sg;
+                        ctx.lineWidth   = 1;
+                        ctx.shadowBlur  = 10 + bassE * 20;
+                        ctx.shadowColor = rgba(r1, g1, b1, 0.8);
+                        ctx.beginPath();
+                        ctx.moveTo(0, shimmerY);
+                        ctx.lineTo(W, shimmerY);
+                        ctx.stroke();
+                        ctx.shadowBlur = 0;
+                    }
+
+                // ════════════════════════════════════════════════════════════
+                // BAR MODE
+                // ════════════════════════════════════════════════════════════
+                } else if (mode === 'bar') {
+                    const bars    = Math.min(bufLen, isMobile ? 48 : 80);
+                    const gap     = 2;
+                    const barW    = Math.max(2, (W - gap * bars) / bars);
+                    ctx.globalCompositeOperation = 'lighter';
 
                     for (let i = 0; i < bars; i++) {
-                        const idx = Math.floor((i / bars) * bufferLength);
-                        const val = dataArray[idx] || 0;
-                        const barH = (val / 255) * (radius * 0.5) * energyRef.current;
+                        const idx  = Math.floor((i / bars) * bufLen);
+                        const val  = sm[idx] / 255;
+                        const barH = val * H * 0.85 * E;
                         if (barH < 1) continue;
 
-                        const angle = i * step;
-                        const x1 = centerX + Math.cos(angle) * (radius + 2);
-                        const y1 = centerY + Math.sin(angle) * (radius + 2);
-                        const x2 = centerX + Math.cos(angle) * (radius + 2 + barH);
-                        const y2 = centerY + Math.sin(angle) * (radius + 2 + barH);
+                        const x = i * (barW + gap);
+                        const t = i / bars; // 0→1 across width
+                        const cr = Math.round(r0 + (r2 - r0) * t);
+                        const cg = Math.round(g0 + (g2 - g0) * t);
+                        const cb = Math.round(b0 + (b2 - b0) * t);
+
+                        const grad = ctx.createLinearGradient(0, H - barH, 0, H);
+                        grad.addColorStop(0, rgba(cr, cg, cb, 0.9 * E));
+                        grad.addColorStop(1, rgba(cr, cg, cb, 0.2 * E));
+                        ctx.fillStyle = grad;
+
+                        if (!isMobile) {
+                            ctx.shadowBlur  = 8 + val * 14;
+                            ctx.shadowColor = rgba(cr, cg, cb, 0.8);
+                        }
+
+                        const rx = Math.min(barW / 2, 3);
+                        ctx.beginPath();
+                        ctx.roundRect(x, H - barH, barW, barH, [rx, rx, 0, 0]);
+                        ctx.fill();
+                    }
+                    ctx.shadowBlur = 0;
+                    ctx.globalCompositeOperation = 'source-over';
+
+                    // Bottom fade
+                    const fade = ctx.createLinearGradient(0, H * 0.78, 0, H);
+                    fade.addColorStop(0, 'rgba(0,0,0,0)');
+                    fade.addColorStop(1, 'rgba(0,0,0,1)');
+                    ctx.globalCompositeOperation = 'destination-out';
+                    ctx.fillStyle = fade;
+                    ctx.fillRect(0, H * 0.78, W, H * 0.22);
+                    ctx.globalCompositeOperation = 'source-over';
+
+                // ════════════════════════════════════════════════════════════
+                // CIRCLE MODE
+                // ════════════════════════════════════════════════════════════
+                } else {
+                    const cx     = W / 2;
+                    const cy     = H / 2;
+                    const radius = Math.min(W, H) / 3;
+                    const bars   = isMobile ? 48 : 96;
+                    const step   = (Math.PI * 2) / bars;
+
+                    ctx.globalCompositeOperation = 'lighter';
+
+                    // Outer glow ring
+                    const ringGrad = ctx.createRadialGradient(cx, cy, radius * 0.9, cx, cy, radius * 1.1);
+                    ringGrad.addColorStop(0, rgba(r1, g1, b1, 0.0));
+                    ringGrad.addColorStop(0.5, rgba(r1, g1, b1, 0.18 * E));
+                    ringGrad.addColorStop(1, rgba(r1, g1, b1, 0.0));
+                    ctx.beginPath();
+                    ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+                    ctx.strokeStyle = rgba(r1, g1, b1, 0.2 * E);
+                    ctx.lineWidth   = 1;
+                    ctx.shadowBlur  = 16;
+                    ctx.shadowColor = rgba(r1, g1, b1, 0.6);
+                    ctx.stroke();
+                    ctx.shadowBlur  = 0;
+
+                    for (let i = 0; i < bars; i++) {
+                        const idx  = Math.floor((i / bars) * bufLen);
+                        const val  = sm[idx] / 255;
+                        const barH = val * radius * 0.85 * E;
+                        if (barH < 1) continue;
+
+                        const angle = i * step - Math.PI / 2;
+                        const t     = i / bars;
+                        const cr    = Math.round(r0 + (r2 - r0) * t);
+                        const cg    = Math.round(g0 + (g2 - g0) * t);
+                        const cb_   = Math.round(b0 + (b2 - b0) * t);
+
+                        const x1 = cx + Math.cos(angle) * radius;
+                        const y1 = cy + Math.sin(angle) * radius;
+                        const x2 = cx + Math.cos(angle) * (radius + barH);
+                        const y2 = cy + Math.sin(angle) * (radius + barH);
 
                         ctx.beginPath();
                         ctx.moveTo(x1, y1);
                         ctx.lineTo(x2, y2);
-                        ctx.strokeStyle = colors[1] || 'white';
-                        ctx.lineWidth = isMobile ? 3 : 2;
+                        ctx.strokeStyle = rgba(cr, cg, cb_, 0.9 * E);
+                        ctx.lineWidth   = isMobile ? 2.5 : 2;
+                        if (!isMobile) {
+                            ctx.shadowBlur  = 6 + val * 12;
+                            ctx.shadowColor = rgba(cr, cg, cb_, 0.7);
+                        }
                         ctx.stroke();
                     }
-                } else {
-                    // WAVE MODE (Default)
-                    if (!smoothedDataRef.current || smoothedDataRef.current.length !== dataArray.length) {
-                        smoothedDataRef.current = new Float32Array(dataArray.length);
-                    }
-                    const smoothedData = smoothedDataRef.current;
-
-                    let bassTotal = 0;
-                    let intensityTotal = 0;
-                    const sampleCount = Math.min(dataArray.length, 32);
-                    for (let i = 0; i < dataArray.length; i++) {
-                        const nextValue = smoothedData[i] + (dataArray[i] - smoothedData[i]) * 0.25;
-                        smoothedData[i] = nextValue;
-                        intensityTotal += nextValue;
-                        if (i < 10) bassTotal += nextValue;
-                    }
-
-                    const bass = bassTotal / 10;
-                    const scale = (bass / 255) * energyRef.current;
-                    const intensity = (intensityTotal / dataArray.length) / 255;
-
-                    // Reactive zoom + alpha pulse
-                    ctx.globalAlpha = (0.4 + intensity * 0.6) * energyRef.current;
-                    ctx.save();
-                    ctx.translate(width / 2, height / 2);
-                    const zoom = 1 + scale * 0.05;
-                    ctx.scale(zoom, zoom);
-                    ctx.translate(-width / 2, -height / 2);
-
-                    const drawWave = (colorStr: string, offset: number, speed: number, amplitude: number) => {
-                        ctx.save();
-                        
-                        // ONLY use shadowBlur on Desktop - it's a mobile performance killer
-                        if (!isMobile) {
-                            ctx.shadowBlur = 15;
-                            ctx.shadowColor = colorStr;
-                        }
-
-                        ctx.beginPath();
-                        ctx.moveTo(0, height);
-
-                        const points: { x: number, y: number }[] = [];
-                        const time = now * speed;
-
-                        for (let i = 0; i <= width + waveStep; i += waveStep) {
-                            const freqIdx = Math.floor((i / width) * (bufferLength / 2.5));
-                            const smoothValue = smoothedData[freqIdx] || 0;
-
-                            const waveY = height * (1 - offset)
-                                - Math.sin(i * 0.004 + time) * amplitude * (0.5 + energyRef.current * 0.5)
-                                - (smoothValue * 0.5 * scale * (height / 200));
-
-                            points.push({ x: i, y: waveY });
-                        }
-
-                        ctx.moveTo(points[0].x, points[0].y);
-                        for (let i = 0; i < points.length - 1; i++) {
-                            const p0 = points[i];
-                            const p1 = points[i + 1];
-                            const midX = (p0.x + p1.x) / 2;
-                            const midY = (p0.y + p1.y) / 2;
-                            ctx.quadraticCurveTo(p0.x, p0.y, midX, midY);
-                        }
-
-                        ctx.lineTo(width, height + 100);
-                        ctx.lineTo(0, height + 100);
-                        ctx.closePath();
-
-                        const gradient = ctx.createLinearGradient(0, height * (1 - offset - 0.3), 0, height);
-                        if (colorStr.startsWith('rgba')) {
-                            const match = colorStr.match(/rgba\((\d+),\s*(\d+),\s*(\d+),\s*([\d.]+)\)/);
-                            if (match) {
-                                const [_, r, g, b, a] = match;
-                                gradient.addColorStop(0, `rgba(${r}, ${g}, ${b}, 0.0)`);
-                                gradient.addColorStop(1, `rgba(${r}, ${g}, ${b}, ${Number(a) * energyRef.current})`);
-                            } else {
-                                gradient.addColorStop(0, "transparent");
-                                gradient.addColorStop(1, colorStr);
-                            }
-                        } else {
-                            gradient.addColorStop(0, "transparent");
-                            gradient.addColorStop(1, colorStr);
-                        }
-
-                        ctx.fillStyle = gradient;
-                        ctx.fill();
-                        ctx.restore();
-                    };
-
-                    const waveLayers = isMobile
-                        ? [
-                            [colors[0], 0.25, 0.0006, 20 + scale * 30],
-                            [colors[1], 0.15, 0.0012, 15 + scale * 25],
-                            [colors[2], 0.08, 0.0020, 10 + scale * 20],
-                        ]
-                        : [
-                            [colors[0], 0.35, 0.0003, 40 + scale * 40],
-                            [colors[0], 0.25, 0.0007, 30 + scale * 30],
-                            [colors[1], 0.18, 0.0012, 25 + scale * 25],
-                            [colors[2], 0.12, 0.0022, 15 + scale * 30],
-                        ];
-
-                    for (const [color, offset, speed, amplitude] of waveLayers) {
-                        drawWave(color as string, offset as number, speed as number, amplitude as number);
-                    }
-
-                    ctx.restore();
-                    ctx.globalAlpha = 1;
+                    ctx.shadowBlur = 0;
+                    ctx.globalCompositeOperation = 'source-over';
                 }
 
-                // Fade bottom edge
-                ctx.fillStyle = gradientCacheRef.current.fade || 'rgba(0,0,0,0.5)';
-                ctx.fillRect(0, height * 0.7, width, height * 0.3);
-                
-                scheduleNextFrame();
+                schedule();
             } catch (e) {
-                console.warn("Visualizer Render Error:", e);
-                scheduleNextFrame();
+                console.warn('[Visualizer] render error:', e);
+                schedule();
             }
         };
 
-        const handleVisibilityChange = () => {
+        // ── Visibility / intersection ────────────────────────────────────────
+        const onVisChange = () => {
             if (!canRender()) {
-                if (animationRef.current) {
-                    cancelAnimationFrame(animationRef.current);
-                    animationRef.current = undefined;
-                }
+                if (animRef.current) { cancelAnimationFrame(animRef.current); animRef.current = undefined; }
                 return;
             }
-
-            if (!animationRef.current) {
-                lastFrameTimeRef.current = 0;
-                animationRef.current = requestAnimationFrame(renderFrame);
-            }
+            if (!animRef.current) { lastFrameRef.current = 0; animRef.current = requestAnimationFrame(frame); }
         };
 
         const observer = typeof IntersectionObserver !== 'undefined' && canvasRef.current
-            ? new IntersectionObserver(([entry]) => {
-                isCanvasVisibleRef.current = !!entry?.isIntersecting;
-                handleVisibilityChange();
-            }, { threshold: 0.05 })
+            ? new IntersectionObserver(([e]) => { visibleRef.current = !!e?.isIntersecting; onVisChange(); }, { threshold: 0.05 })
             : null;
 
-        if (canvasRef.current && observer) {
-            observer.observe(canvasRef.current);
-        }
-
+        if (canvasRef.current && observer) observer.observe(canvasRef.current);
         if (typeof document !== 'undefined') {
-            handleVisibilityChange();
-            document.addEventListener('visibilitychange', handleVisibilityChange);
+            onVisChange();
+            document.addEventListener('visibilitychange', onVisChange);
         } else {
-            renderFrame();
+            frame();
         }
 
         return () => {
-            isDisposed = true;
+            disposed = true;
             observer?.disconnect();
-            if (typeof document !== 'undefined') {
-                document.removeEventListener('visibilitychange', handleVisibilityChange);
-            }
-            if (animationRef.current) {
-                cancelAnimationFrame(animationRef.current);
-                animationRef.current = undefined;
-            }
-            analyserDataRef.current = null;
-            smoothedDataRef.current = null;
+            if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', onVisChange);
+            if (animRef.current) { cancelAnimationFrame(animRef.current); animRef.current = undefined; }
+            rawDataRef.current   = null;
+            smoothRef.current    = null;
+            ringsRef.current     = [];
         };
     }, [analyser, isPlaying, colors, mode, performanceMode]);
 
@@ -427,10 +462,7 @@ export default function Visualizer({
         <canvas
             ref={canvasRef}
             className={className}
-            style={{
-                ...(height ? { height } : {}),
-                filter: `drop-shadow(0 0 20px ${colors[2] ? colors[2].replace(/[\d.]+\)$/, '0.3)') : 'rgba(255,255,255,0.3)'})`
-            }}
+            style={height ? { height } : undefined}
         />
     );
 }

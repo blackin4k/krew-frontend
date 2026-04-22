@@ -368,7 +368,7 @@ export default function Player() {
 
   const baseColor = useMemo(() => {
     if (visualizerColor) return null;
-    if (!domColor) return { r: 255, g: 255, b: 255 };
+    if (!domColor) return { r: 120, g: 140, b: 255 }; // Premium fallback instead of pure white
 
     const brightness = (domColor.r * 299 + domColor.g * 587 + domColor.b * 114) / 1000;
     if (brightness < 80) {
@@ -379,13 +379,24 @@ export default function Player() {
   }, [visualizerColor, domColor]);
 
   const paletteColors = useMemo(() => {
-    if (!palette?.length) return null;
-    // Convert palette colors to rgba stops (dimmer → brighter → punchy)
-    const [primary, accent, secondary] = palette;
+    if (!palette || palette.length === 0) return null;
+    
+    // Ensure we always have 3 valid colors by duplicating if needed
+    const primary = palette[0];
+    const secondary = palette[1] || primary;
+    const accent = palette[2] || secondary;
+    
+    // Sort by brightness to ensure logical gradient (dimmer -> brighter -> punchy)
+    const sorted = [primary, secondary, accent].sort((a, b) => {
+      const lumA = (a.r * 299 + a.g * 587 + a.b * 114) / 1000;
+      const lumB = (b.r * 299 + b.g * 587 + b.b * 114) / 1000;
+      return lumA - lumB;
+    });
+
     return [
-      `rgba(${secondary.r}, ${secondary.g}, ${secondary.b}, 0.35)`,
-      `rgba(${primary.r}, ${primary.g}, ${primary.b}, 0.85)`,
-      `rgba(${accent.r}, ${accent.g}, ${accent.b}, 1)`,
+      `rgba(${sorted[0].r}, ${sorted[0].g}, ${sorted[0].b}, 0.35)`,
+      `rgba(${sorted[1].r}, ${sorted[1].g}, ${sorted[1].b}, 0.85)`,
+      `rgba(${sorted[2].r}, ${sorted[2].g}, ${sorted[2].b}, 1)`,
     ];
   }, [palette]);
 

@@ -168,8 +168,8 @@ export default function Visualizer({
                     if (i < bassEnd) bassSum += sm[i];
                 }
                 const bass = (bassSum / bassEnd) / 255;
-                // Exaggerate bass for visual punch
-                const bassE = bass * bass * E * 2.5;
+                // Exaggerate bass for visual punch (reduced for controlled motion)
+                const bassE = bass * bass * E * 1.2;
 
                 ctx.clearRect(0, 0, W, H);
 
@@ -199,9 +199,9 @@ export default function Visualizer({
                                 // Organic sine sway for background movement
                                 - Math.sin(x*0.005 + T) * amp * (0.3 + E*0.2)
                                 // Audio-reactive displacement
-                                - freq * amp * 3.5 * E
+                                - freq * amp * 1.5 * E
                                 // Bass bump
-                                - bassE * amp * 2.5;
+                                - bassE * amp * 1.2;
                             
                             pts.push([x, y]);
                         }
@@ -253,12 +253,12 @@ export default function Visualizer({
 
                     // Reduced layers for cleaner look and better performance
                     if (mob) {
-                        drawWave(r0,g0,b0, 0.25, 0.0006, 35+bassE*30, 0.6, false);
-                        drawWave(r2,g2,b2, 0.15, 0.0012, 25+bassE*25, 0.8, true);
+                        drawWave(r0,g0,b0, 0.25, 0.0006, 20+bassE*15, 0.6, false);
+                        drawWave(r2,g2,b2, 0.15, 0.0012, 15+bassE*10, 0.8, true);
                     } else {
-                        drawWave(r0,g0,b0, 0.35, 0.0004, 55+bassE*50, 0.4, false);
-                        drawWave(r1,g1,b1, 0.22, 0.0008, 40+bassE*40, 0.6, false);
-                        drawWave(r2,g2,b2, 0.12, 0.0015, 28+bassE*30, 0.8, true);
+                        drawWave(r0,g0,b0, 0.35, 0.0004, 30+bassE*25, 0.4, false);
+                        drawWave(r1,g1,b1, 0.22, 0.0008, 22+bassE*20, 0.6, false);
+                        drawWave(r2,g2,b2, 0.12, 0.0015, 15+bassE*15, 0.8, true);
                     }
 
                     ctx.globalCompositeOperation = 'source-over';

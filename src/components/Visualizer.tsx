@@ -18,31 +18,13 @@ function parseRGB(c: string): [number, number, number] {
     return [200, 140, 255];
 }
 
-/** Boost dim palette colours so they pop on dark backgrounds */
-function boost(r:number,g:number,b:number,factor=1.35):[number,number,number]{
+/** Boost colors to ensure they remain vibrant on dark backgrounds */
+function boost(r:number,g:number,b:number,factor=1.2):[number,number,number]{
     return [Math.min(255,r*factor)|0, Math.min(255,g*factor)|0, Math.min(255,b*factor)|0];
 }
 
 const rc = (r:number,g:number,b:number,a:number) =>
-    `rgba(${r},${g},${b},${Math.max(0,Math.min(1,a))})`;
-
-// ── simulated fallback ────────────────────────────────────────────────────────
-
-function simData(len: number, E: number): Uint8Array {
-    const d = new Uint8Array(len);
-    const t = Date.now() / 1000;
-    for (let i = 0; i < len; i++) {
-        const n = i / len;
-        const bass = Math.max(0, 1 - n * 3) * (0.5 + 0.5 * Math.abs(Math.sin(t * 1.1)));
-        const v = 0.38
-            + Math.sin(t * 2.0 + i * 0.13) * 0.28
-            + Math.sin(t * 3.8 + i * 0.07) * 0.18
-            + Math.sin(t * 1.2 + i * 0.20) * 0.12
-            + bass * 0.4;
-        d[i] = Math.floor(Math.max(0, Math.min(1, v)) * 255 * E);
-    }
-    return d;
-}
+    `rgba(${r|0},${g|0},${b|0},${Math.max(0,Math.min(1,a))})`;
 
 // ── component ─────────────────────────────────────────────────────────────────
 
@@ -61,23 +43,37 @@ export default function Visualizer({
 
     const animRef      = useRef<number>();
     const energyRef    = useRef(0);
-    const silentRef    = useRef(0);
     const rawRef       = useRef<Uint8Array|null>(null);
     const smRef        = useRef<Float32Array|null>(null);
-    // separate fast (attack) and slow (release) smoothed buffers for snappy reactivity
-    const smFastRef    = useRef<Float32Array|null>(null);
     const frameRef     = useRef(0);
     const visRef       = useRef(true);
-    const ringsRef     = useRef<{r:number;a:number;spd:number}[]>([]);
-    const lastBassRef  = useRef(0);
-    // peak hold for bar mode
+    
+    // For bar mode peaks
     const peaksRef     = useRef<Float32Array|null>(null);
-    const peakHoldRef  = useRef<Float32Array|null>(null);
+
+    // Refs for dynamic props to avoid restarting the animation loop
+    const isPlayingRef = useRef(isPlaying);
+    const targetColorsRef = useRef<number[][]>([
+        boost(...parseRGB('rgba(180,100,255,1)')),
+        boost(...parseRGB('rgba(80,150,255,1)')),
+        boost(...parseRGB('rgba(255,80,180,1)'))
+    ]);
+    const currentColorsRef = useRef<number[][]>([...targetColorsRef.current.map(c => [...c])]);
 
     useEffect(() => {
         attachVisualizer();
         return () => detachVisualizer();
     }, [attachVisualizer, detachVisualizer]);
+
+    // Update dynamic refs without triggering full re-renders of the canvas loop
+    useEffect(() => { isPlayingRef.current = isPlaying; }, [isPlaying]);
+    useEffect(() => {
+        targetColorsRef.current = [
+            boost(...parseRGB(colors[0] ?? 'rgba(180,100,255,1)')),
+            boost(...parseRGB(colors[1] ?? 'rgba(80,150,255,1)')),
+            boost(...parseRGB(colors[2] ?? 'rgba(255,80,180,1)'))
+        ];
+    }, [colors]);
 
     useEffect(() => {
         const lite   = performanceMode === 'lite';
@@ -85,11 +81,6 @@ export default function Visualizer({
         const budget = lite ? 50 : mob ? 33 : 16;
         const dprCap = mob ? 1 : 1.5;
         let dead     = false;
-
-        // Boost colours so they're vivid on dark backgrounds
-        const [r0,g0,b0] = boost(...parseRGB(colors[0] ?? 'rgba(180,100,255,1)'));
-        const [r1,g1,b1] = boost(...parseRGB(colors[1] ?? 'rgba(80,150,255,1)'));
-        const [r2,g2,b2] = boost(...parseRGB(colors[2] ?? 'rgba(255,80,180,1)'));
 
         const alive = () => !dead && visRef.current
             && (typeof document==='undefined' || document.visibilityState==='visible');
@@ -112,6 +103,7 @@ export default function Visualizer({
                 const ch = canvas.offsetHeight || canvas.clientHeight;
                 if (!cw || !ch) { go(); return; }
 
+                // Manage High-DPI displays while capping on mobile for performance
                 const dpr = Math.min(window.devicePixelRatio||1, dprCap);
                 const pw  = Math.max(1, Math.floor(cw*dpr));
                 const ph  = Math.max(1, Math.floor(ch*dpr));
@@ -121,10 +113,27 @@ export default function Visualizer({
                 const W = cw, H = ch;
                 const bufLen = analyser ? analyser.frequencyBinCount : 128;
 
+                // ── dynamic color interpolation ──────────────────────────────
+                const targetColors = targetColorsRef.current;
+                const currentColors = currentColorsRef.current;
+                for (let i = 0; i < 3; i++) {
+                    for (let j = 0; j < 3; j++) {
+                        // Smoothly lerp towards target album colors
+                        currentColors[i][j] += (targetColors[i][j] - currentColors[i][j]) * 0.04;
+                    }
+                }
+                const [r0, g0, b0] = currentColors[0];
+                const [r1, g1, b1] = currentColors[1];
+                const [r2, g2, b2] = currentColors[2];
+
                 // ── energy envelope ──────────────────────────────────────────
-                energyRef.current += ((isPlaying?1:0) - energyRef.current) * (isPlaying?0.28:0.04);
+                // Smooth transition in and out of play state
+                const currentlyPlaying = isPlayingRef.current;
+                energyRef.current += ((currentlyPlaying?1:0) - energyRef.current) * (currentlyPlaying?0.28:0.04);
                 const E = energyRef.current;
-                if (E < 0.001 && !isPlaying) { ctx.clearRect(0,0,W,H); go(); return; }
+                
+                // Clear and stop rendering if effectively idle
+                if (E < 0.001 && !currentlyPlaying) { ctx.clearRect(0,0,W,H); go(); return; }
 
                 // ── frequency data ───────────────────────────────────────────
                 let data: Uint8Array;
@@ -135,40 +144,32 @@ export default function Visualizer({
                         rawRef.current = raw;
                     }
                     analyser.getByteFrequencyData(raw as any);
-                    const peak = raw.reduce((m,v)=>v>m?v:m,0);
-                    if (peak>5) { silentRef.current=0; data=raw; }
-                    else { silentRef.current++; data=silentRef.current<=5?raw:simData(bufLen,E); }
-                } else { data=simData(bufLen,E); }
-
-                // ── dual-rate smoothing (snappy attack, smooth release) ───────
-                if (!smRef.current || smRef.current.length!==bufLen) {
-                    smRef.current     = new Float32Array(bufLen);
-                    smFastRef.current = new Float32Array(bufLen);
+                    data = raw;
+                } else {
+                    // Graceful fallback if analyser is unavailable
+                    data = new Uint8Array(bufLen);
                 }
-                const sm     = smRef.current!;
-                const smFast = smFastRef.current!;
 
-                let bassSum=0, midSum=0, highSum=0;
+                // ── responsive smoothing ──────────────────────────────────────
+                // Single smoothing layer for fast attack and controlled decay
+                if (!smRef.current || smRef.current.length!==bufLen) {
+                    smRef.current = new Float32Array(bufLen);
+                }
+                const sm = smRef.current;
+
+                let bassSum=0;
                 const bassEnd = Math.floor(bufLen*0.08);
-                const midEnd  = Math.floor(bufLen*0.4);
 
                 for (let i=0; i<bufLen; i++) {
                     const v = data[i];
-                    // Very fast attack (0.6) so transients hit immediately;
-                    // slow release (0.10) so the wave doesn't snap down.
-                    const lerpRate = v > smFast[i] ? 0.6 : 0.10;
-                    smFast[i] += (v - smFast[i]) * lerpRate;
-                    // Slightly smoothed version for wave shape (less jitter)
-                    sm[i]     += (v - sm[i]) * 0.28;
-                    if (i < bassEnd)       bassSum  += smFast[i];
-                    else if (i < midEnd)   midSum   += smFast[i];
-                    else                   highSum  += smFast[i];
+                    // Fast attack (0.8) to hit transients instantly, slower release (0.15) for smooth drop
+                    const lerpRate = v > sm[i] ? 0.8 : 0.15;
+                    sm[i] += (v - sm[i]) * lerpRate;
+                    if (i < bassEnd) bassSum += sm[i];
                 }
-                const bass  = (bassSum / bassEnd) / 255;
-                const mid   = (midSum  / (midEnd-bassEnd)) / 255;
-                // Square bass to make quiet passages calm, loud passages explosive
-                const bassE = bass * bass * E * 2.2;
-                const midE  = mid  * E;
+                const bass = (bassSum / bassEnd) / 255;
+                // Exaggerate bass for visual punch
+                const bassE = bass * bass * E * 2.5;
 
                 ctx.clearRect(0, 0, W, H);
 
@@ -176,43 +177,36 @@ export default function Visualizer({
                 //  WAVE MODE
                 // ════════════════════════════════════════════════════════════
                 if (mode !== 'bar' && mode !== 'circle') {
-
                     ctx.globalCompositeOperation = 'lighter';
 
-                    /** Build a smooth wave path and return the lowest Y reached */
                     const drawWave = (
                         cr:number,cg:number,cb:number,
                         yFrac:number, speed:number, amp:number,
-                        alpha:number, blur:number,
-                        strokeTop:boolean
+                        alpha:number, strokeTop:boolean
                     ) => {
                         const baseY  = H * (1 - yFrac);
                         const T      = now * speed;
-                        const stepPx = Math.max(1, mob ? Math.ceil(W/40) : Math.ceil(W/70));
+                        // Coarser steps on mobile for performance
+                        const stepPx = Math.max(1, mob ? Math.ceil(W/40) : Math.ceil(W/80));
                         const pts:[number,number][] = [];
 
                         for (let x=-stepPx; x<=W+stepPx; x+=stepPx) {
-                            // Map x → frequency bin (use lower 65% of spectrum where music lives)
-                            const fi   = Math.max(0, Math.min(bufLen-1, Math.floor((x/W)*(bufLen*0.65))));
-                            // smFast for snappy per-point reactivity; sm for gentle sway underneath
-                            const freqFast = smFast[fi] / 255;
-                            const freqSlow = sm[fi]     / 255;
-                            const y    = baseY
-                                // Slow organic sine sway (always present)
-                                - Math.sin(x*0.0048 + T)      * amp * (0.4 + E*0.4)
-                                - Math.sin(x*0.0110 - T*0.65) * amp * 0.22 * E
-                                // Mid-freq detail layer
-                                - Math.sin(x*0.0022 + T*0.3)  * amp * 0.15 * midE
-                                // 🎵 REAL AUDIO: fast buffer drives the main displacement
-                                - freqFast * amp * 3.5 * E
-                                // Slow buffer adds smoothness under the fast spikes
-                                - freqSlow * amp * 1.0 * E
-                                // 🥁 BASS: squared for explosive hits on kicks/bass notes
-                                - bassE * amp * 2.8;
+                            // Focus on lower 60% of frequency spectrum where most energy lives
+                            const fi = Math.max(0, Math.min(bufLen-1, Math.floor((x/W)*(bufLen*0.60))));
+                            const freq = sm[fi] / 255;
+                            
+                            const y = baseY
+                                // Organic sine sway for background movement
+                                - Math.sin(x*0.005 + T) * amp * (0.3 + E*0.2)
+                                // Audio-reactive displacement
+                                - freq * amp * 3.5 * E
+                                // Bass bump
+                                - bassE * amp * 2.5;
+                            
                             pts.push([x, y]);
                         }
 
-                        // ── filled body ──
+                        // Draw filled path
                         ctx.beginPath();
                         ctx.moveTo(pts[0][0], pts[0][1]);
                         for (let i=0; i<pts.length-1; i++) {
@@ -226,79 +220,54 @@ export default function Visualizer({
                         const topY = pts.reduce((m,p)=>p[1]<m?p[1]:m, H);
                         const grad = ctx.createLinearGradient(0, topY, 0, H+60);
                         grad.addColorStop(0,   rc(cr,cg,cb, 0));
-                        grad.addColorStop(0.2, rc(cr,cg,cb, alpha*0.35*E));
+                        grad.addColorStop(0.3, rc(cr,cg,cb, alpha*0.4*E));
                         grad.addColorStop(1,   rc(cr,cg,cb, alpha*E));
+                        
                         ctx.fillStyle = grad;
-                        if (!mob && blur>0) { ctx.shadowBlur=blur*(1+bassE); ctx.shadowColor=rc(cr,cg,cb,0.9); }
+                        if (!mob) { ctx.shadowBlur = 10 * (1 + bassE); ctx.shadowColor = rc(cr,cg,cb,0.8); }
                         ctx.fill();
                         ctx.shadowBlur = 0;
 
-                        // ── bright crest line (desktop only) ──
-                        if (strokeTop && !mob && E > 0.15) {
+                        // Vibrant top stroke for desktop
+                        if (strokeTop && !mob && E > 0.1) {
                             ctx.beginPath();
                             ctx.moveTo(pts[0][0], pts[0][1]);
                             for (let i=0; i<pts.length-1; i++) {
                                 const mx=(pts[i][0]+pts[i+1][0])/2, my=(pts[i][1]+pts[i+1][1])/2;
                                 ctx.quadraticCurveTo(pts[i][0], pts[i][1], mx, my);
                             }
+                            
                             const sg = ctx.createLinearGradient(0,0,W,0);
                             sg.addColorStop(0,   rc(cr,cg,cb,0));
-                            sg.addColorStop(0.3, rc(cr,cg,cb,0.8*E));
                             sg.addColorStop(0.5, rc(255,255,255,0.9*E));
-                            sg.addColorStop(0.7, rc(cr,cg,cb,0.8*E));
                             sg.addColorStop(1,   rc(cr,cg,cb,0));
-                            ctx.strokeStyle   = sg;
-                            ctx.lineWidth     = 1.5;
-                            ctx.shadowBlur    = 18 + bassE*20;
-                            ctx.shadowColor   = rc(cr,cg,cb,1);
+                            
+                            ctx.strokeStyle = sg;
+                            ctx.lineWidth = 2;
+                            ctx.shadowBlur = 20 + bassE * 20;
+                            ctx.shadowColor = rc(cr,cg,cb,1);
                             ctx.stroke();
-                            ctx.shadowBlur    = 0;
+                            ctx.shadowBlur = 0;
                         }
                     };
 
+                    // Reduced layers for cleaner look and better performance
                     if (mob) {
-                        // Mobile: 3 layers, higher base amp so motion is visible
-                        drawWave(r0,g0,b0,  0.32, 0.00050, 38+bassE*40,  0.65, 0,  false);
-                        drawWave(r1,g1,b1,  0.20, 0.00105, 30+bassE*34,  0.75, 0,  false);
-                        drawWave(r2,g2,b2,  0.11, 0.00200, 22+bassE*28,  0.85, 0,  true);
+                        drawWave(r0,g0,b0, 0.25, 0.0006, 35+bassE*30, 0.6, false);
+                        drawWave(r2,g2,b2, 0.15, 0.0012, 25+bassE*25, 0.8, true);
                     } else {
-                        // Desktop: 5 layers, large base amps for dramatic movement
-                        drawWave(r0,g0,b0,  0.44, 0.00028, 60+bassE*70,  0.45, 16, false);
-                        drawWave(r1,g1,b1,  0.34, 0.00058, 50+bassE*60,  0.55, 20, false);
-                        drawWave(r0,g0,b0,  0.25, 0.00092, 42+bassE*50,  0.60, 16, false);
-                        drawWave(r2,g2,b2,  0.17, 0.00148, 34+bassE*42,  0.70, 24, false);
-                        drawWave(r1,g1,b1,  0.09, 0.00238, 26+bassE*34,  0.80, 20, true);
-                    }
-
-                    // ── pulse rings on bass transients ──
-                    if (!mob) {
-                        if (bassE > 0.42 && bass > lastBassRef.current + 0.10)
-                            ringsRef.current.push({ r:0, a:0.55*E, spd:1.5+bass*2.2 });
-                        lastBassRef.current = bass;
-                        for (let i=ringsRef.current.length-1; i>=0; i--) {
-                            const ring = ringsRef.current[i];
-                            ring.r  += ring.spd * 3;
-                            ring.a  -= 0.013;
-                            if (ring.a<=0) { ringsRef.current.splice(i,1); continue; }
-                            const cx=W/2, cy=H*0.78;
-                            ctx.beginPath();
-                            ctx.ellipse(cx, cy, ring.r*2.4, ring.r*0.5, 0, 0, Math.PI*2);
-                            ctx.strokeStyle = rc(r1,g1,b1, ring.a);
-                            ctx.lineWidth   = 1.5;
-                            ctx.shadowBlur  = 14;
-                            ctx.shadowColor = rc(r1,g1,b1, ring.a*0.7);
-                            ctx.stroke();
-                            ctx.shadowBlur  = 0;
-                        }
+                        drawWave(r0,g0,b0, 0.35, 0.0004, 55+bassE*50, 0.4, false);
+                        drawWave(r1,g1,b1, 0.22, 0.0008, 40+bassE*40, 0.6, false);
+                        drawWave(r2,g2,b2, 0.12, 0.0015, 28+bassE*30, 0.8, true);
                     }
 
                     ctx.globalCompositeOperation = 'source-over';
 
-                    // ── fade mask: long gradient, full-canvas rect ──
-                    const mask = ctx.createLinearGradient(0, H*0.38, 0, H);
-                    mask.addColorStop(0,    'rgba(0,0,0,0)');
-                    mask.addColorStop(0.55, 'rgba(0,0,0,0.04)');
-                    mask.addColorStop(1,    'rgba(0,0,0,1)');
+                    // Bottom fade mask to blend seamlessly
+                    const mask = ctx.createLinearGradient(0, H*0.4, 0, H);
+                    mask.addColorStop(0, 'rgba(0,0,0,0)');
+                    mask.addColorStop(0.5, 'rgba(0,0,0,0.1)');
+                    mask.addColorStop(1, 'rgba(0,0,0,1)');
                     ctx.globalCompositeOperation = 'destination-out';
                     ctx.fillStyle = mask;
                     ctx.fillRect(0, 0, W, H);
@@ -308,70 +277,68 @@ export default function Visualizer({
                 //  BAR MODE
                 // ════════════════════════════════════════════════════════════
                 } else if (mode === 'bar') {
-                    const bars  = Math.min(bufLen, mob ? 48 : 80);
-                    const gap   = 2;
+                    const bars  = Math.min(bufLen, mob ? 40 : 80);
+                    const gap   = mob ? 2 : 3;
                     const barW  = Math.max(2, (W - gap*bars) / bars);
 
-                    // init peak holders
                     if (!peaksRef.current || peaksRef.current.length!==bars) {
-                        peaksRef.current    = new Float32Array(bars);
-                        peakHoldRef.current = new Float32Array(bars); // hold timer
+                        peaksRef.current = new Float32Array(bars);
                     }
 
                     ctx.globalCompositeOperation = 'lighter';
 
                     for (let i=0; i<bars; i++) {
                         const idx  = Math.floor((i/bars)*bufLen);
-                        const val  = smFast[idx] / 255 * E;
-                        const barH = val * H * 0.82;
+                        const val  = sm[idx] / 255 * E;
+                        const barH = val * H * 0.8;
                         const x    = i * (barW+gap);
-                        const t    = i / bars;
-                        const cr   = Math.round(r0+(r2-r0)*t);
-                        const cg   = Math.round(g0+(g2-g0)*t);
-                        const cb   = Math.round(b0+(b2-b0)*t);
+                        
+                        // Color interpolation across the bars
+                        const t  = i / bars;
+                        const cr = Math.round(r0+(r2-r0)*t);
+                        const cg = Math.round(g0+(g2-g0)*t);
+                        const cb = Math.round(b0+(b2-b0)*t);
 
-                        if (barH < 1) { peakHoldRef.current![i] = 0; peaksRef.current![i] *= 0.94; }
-                        else {
-                            if (barH >= peaksRef.current![i]) {
-                                peaksRef.current![i]    = barH;
-                                peakHoldRef.current![i] = 18; // hold N frames
-                            } else {
-                                if (peakHoldRef.current![i] > 0) peakHoldRef.current![i]--;
-                                else peaksRef.current![i] = Math.max(0, peaksRef.current![i] - 2.5);
-                            }
+                        // Peak tracking for smooth dots
+                        if (barH >= peaksRef.current[i]) {
+                            peaksRef.current[i] = barH;
+                        } else {
+                            peaksRef.current[i] = Math.max(0, peaksRef.current[i] - 1.5);
                         }
 
-                        if (barH < 1) continue;
+                        if (barH < 1 && peaksRef.current[i] < 1) continue;
 
-                        // bar fill
-                        const grad = ctx.createLinearGradient(0, H-barH, 0, H);
-                        grad.addColorStop(0, rc(cr,cg,cb, 0.95));
-                        grad.addColorStop(1, rc(cr,cg,cb, 0.18));
-                        ctx.fillStyle = grad;
-                        if (!mob) { ctx.shadowBlur=8+val*18; ctx.shadowColor=rc(cr,cg,cb,0.9); }
-                        ctx.beginPath();
-                        const rx = Math.min(barW/2, 3);
-                        ctx.roundRect(x, H-barH, barW, barH, [rx,rx,0,0]);
-                        ctx.fill();
-                        ctx.shadowBlur = 0;
+                        // Draw main bar
+                        if (barH >= 1) {
+                            const grad = ctx.createLinearGradient(0, H-barH, 0, H);
+                            grad.addColorStop(0, rc(cr,cg,cb, 0.9));
+                            grad.addColorStop(1, rc(cr,cg,cb, 0.2));
+                            ctx.fillStyle = grad;
+                            
+                            if (!mob) { ctx.shadowBlur = 10 + val*20; ctx.shadowColor = rc(cr,cg,cb,0.8); }
+                            ctx.beginPath();
+                            const rx = Math.min(barW/2, 4);
+                            ctx.roundRect(x, H-barH, barW, barH, [rx,rx,0,0]);
+                            ctx.fill();
+                            ctx.shadowBlur = 0;
+                        }
 
-                        // peak dot
-                        const pk = peaksRef.current![i];
+                        // Draw peak dot
+                        const pk = peaksRef.current[i];
                         if (pk > 2) {
-                            ctx.fillStyle = rc(255,255,255, 0.75*E);
-                            if (!mob) { ctx.shadowBlur=6; ctx.shadowColor=rc(cr,cg,cb,1); }
-                            ctx.fillRect(x, H-pk-2, barW, 2);
+                            ctx.fillStyle = rc(255,255,255, 0.8*E);
+                            if (!mob) { ctx.shadowBlur = 8; ctx.shadowColor = rc(cr,cg,cb,1); }
+                            ctx.fillRect(x, H-pk-3, barW, 2);
                             ctx.shadowBlur = 0;
                         }
                     }
 
-                    ctx.shadowBlur = 0;
                     ctx.globalCompositeOperation = 'source-over';
-
-                    const fade = ctx.createLinearGradient(0, H*0.5, 0, H);
-                    fade.addColorStop(0,   'rgba(0,0,0,0)');
-                    fade.addColorStop(0.7, 'rgba(0,0,0,0.06)');
-                    fade.addColorStop(1,   'rgba(0,0,0,1)');
+                    
+                    // Fade bottom
+                    const fade = ctx.createLinearGradient(0, H*0.6, 0, H);
+                    fade.addColorStop(0, 'rgba(0,0,0,0)');
+                    fade.addColorStop(1, 'rgba(0,0,0,1)');
                     ctx.globalCompositeOperation = 'destination-out';
                     ctx.fillStyle = fade;
                     ctx.fillRect(0, 0, W, H);
@@ -382,37 +349,37 @@ export default function Visualizer({
                 // ════════════════════════════════════════════════════════════
                 } else {
                     const cx     = W/2, cy = H/2;
-                    const radius = Math.min(W,H) / 3.2;
-                    const bars   = mob ? 48 : 96;
+                    const radius = Math.min(W,H) / 3.5;
+                    const bars   = mob ? 60 : 100;
                     const step   = (Math.PI*2) / bars;
 
                     ctx.globalCompositeOperation = 'lighter';
 
-                    // ── pulsing inner circle ──
-                    const pulseR = radius * (0.55 + bassE * 0.28) * E;
+                    // Pulsing core
+                    const pulseR = radius * (0.6 + bassE * 0.3) * E;
                     const rg = ctx.createRadialGradient(cx,cy,0,cx,cy,pulseR);
-                    rg.addColorStop(0,   rc(r0,g0,b0, 0.22*E));
-                    rg.addColorStop(0.6, rc(r1,g1,b1, 0.10*E));
+                    rg.addColorStop(0,   rc(r0,g0,b0, 0.3*E));
+                    rg.addColorStop(0.5, rc(r1,g1,b1, 0.1*E));
                     rg.addColorStop(1,   rc(r0,g0,b0, 0));
                     ctx.fillStyle = rg;
                     ctx.beginPath();
                     ctx.arc(cx, cy, pulseR, 0, Math.PI*2);
                     ctx.fill();
 
-                    // ── base ring ──
+                    // Crisp inner ring
                     ctx.beginPath();
                     ctx.arc(cx, cy, radius, 0, Math.PI*2);
-                    ctx.strokeStyle = rc(r1,g1,b1, 0.25*E);
-                    ctx.lineWidth   = 1;
-                    if (!mob) { ctx.shadowBlur=12; ctx.shadowColor=rc(r1,g1,b1,0.7); }
+                    ctx.strokeStyle = rc(r1,g1,b1, 0.4*E);
+                    ctx.lineWidth = 1.5;
+                    if (!mob) { ctx.shadowBlur = 15; ctx.shadowColor = rc(r1,g1,b1,0.8); }
                     ctx.stroke();
                     ctx.shadowBlur = 0;
 
-                    // ── bars outward + inward mirror ──
+                    // Outward reactive bars
                     for (let i=0; i<bars; i++) {
                         const idx   = Math.floor((i/bars)*bufLen);
-                        const val   = smFast[idx]/255;
-                        const barH  = val * radius * 0.9 * E;
+                        const val   = sm[idx]/255;
+                        const barH  = val * radius * 1.2 * E;
                         if (barH < 1) continue;
 
                         const angle = i*step - Math.PI/2;
@@ -421,39 +388,49 @@ export default function Visualizer({
                         const cg    = Math.round(g0+(g2-g0)*t);
                         const cb_   = Math.round(b0+(b2-b0)*t);
 
-                        // outer bar
-                        const x1=cx+Math.cos(angle)*radius,     y1=cy+Math.sin(angle)*radius;
-                        const x2=cx+Math.cos(angle)*(radius+barH), y2=cy+Math.sin(angle)*(radius+barH);
-                        ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2);
-                        ctx.strokeStyle = rc(cr,cg,cb_,0.9*E);
-                        ctx.lineWidth   = mob ? 2.5 : 2;
-                        if (!mob) { ctx.shadowBlur=6+val*14; ctx.shadowColor=rc(cr,cg,cb_,0.8); }
+                        const x1 = cx+Math.cos(angle)*radius, y1 = cy+Math.sin(angle)*radius;
+                        const x2 = cx+Math.cos(angle)*(radius+barH), y2 = cy+Math.sin(angle)*(radius+barH);
+                        
+                        ctx.beginPath(); 
+                        ctx.moveTo(x1,y1); 
+                        ctx.lineTo(x2,y2);
+                        
+                        ctx.strokeStyle = rc(cr,cg,cb_,0.8*E);
+                        ctx.lineWidth = mob ? 2 : 2.5;
+                        if (!mob) { ctx.shadowBlur = 8 + val*12; ctx.shadowColor = rc(cr,cg,cb_,0.9); }
                         ctx.stroke();
-
-                        // inner mirror (half height)
-                        const innerH = barH * 0.45;
-                        const x3=cx+Math.cos(angle)*(radius-innerH), y3=cy+Math.sin(angle)*(radius-innerH);
-                        ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x3,y3);
-                        ctx.strokeStyle = rc(cr,cg,cb_, 0.35*E);
-                        ctx.lineWidth   = mob ? 1.5 : 1;
+                        ctx.shadowBlur = 0;
+                        
+                        // Subtle inner mirrored bar
+                        const innerH = barH * 0.3;
+                        const x3 = cx+Math.cos(angle)*(radius-innerH), y3 = cy+Math.sin(angle)*(radius-innerH);
+                        ctx.beginPath(); 
+                        ctx.moveTo(x1,y1); 
+                        ctx.lineTo(x3,y3);
+                        ctx.strokeStyle = rc(cr,cg,cb_, 0.4*E);
+                        ctx.lineWidth = mob ? 1 : 1.5;
                         ctx.stroke();
-                        ctx.shadowBlur  = 0;
                     }
 
-                    ctx.shadowBlur = 0;
                     ctx.globalCompositeOperation = 'source-over';
                 }
 
                 go();
             } catch(e) {
-                console.warn('[Visualizer]', e);
+                console.warn('[Visualizer] Render error:', e);
                 go();
             }
         };
 
         const onVis = () => {
-            if (!alive()) { if(animRef.current){cancelAnimationFrame(animRef.current);animRef.current=undefined;} return; }
-            if (!animRef.current) { frameRef.current=0; animRef.current=requestAnimationFrame(tick); }
+            if (!alive()) { 
+                if (animRef.current) { cancelAnimationFrame(animRef.current); animRef.current=undefined; }
+                return; 
+            }
+            if (!animRef.current) { 
+                frameRef.current = 0; 
+                animRef.current = requestAnimationFrame(tick); 
+            }
         };
 
         const obs = typeof IntersectionObserver!=='undefined' && canvasRef.current
@@ -464,17 +441,21 @@ export default function Visualizer({
         if (typeof document!=='undefined') {
             onVis();
             document.addEventListener('visibilitychange', onVis);
-        } else { tick(); }
+        } else { 
+            tick(); 
+        }
 
         return () => {
             dead = true;
             obs?.disconnect();
             if (typeof document!=='undefined') document.removeEventListener('visibilitychange', onVis);
             if (animRef.current) { cancelAnimationFrame(animRef.current); animRef.current=undefined; }
-            rawRef.current=null; smRef.current=null; smFastRef.current=null;
-            peaksRef.current=null; peakHoldRef.current=null; ringsRef.current=[];
+            rawRef.current = null; 
+            smRef.current = null;
+            peaksRef.current = null;
         };
-    }, [analyser, isPlaying, colors, mode, performanceMode]);
+    // Removed colors and isPlaying from dependencies to prevent harsh loop resets!
+    }, [analyser, mode, performanceMode]);
 
     return <canvas ref={canvasRef} className={className} style={height?{height}:undefined} />;
 }

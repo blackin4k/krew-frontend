@@ -1004,7 +1004,7 @@ const ExpandedPlayerComponent = memo(({
                   <div className="relative z-30">
                     <div
                       ref={progressBarRef}
-                      className="relative h-10 flex flex-col justify-center group touch-none px-0"
+                      className="relative h-10 flex flex-col justify-center group touch-none px-4"
                       onPointerDown={(e) => e.stopPropagation()}
                     >
                       {loopSegmentEnabled && duration && (
@@ -1119,7 +1119,7 @@ const ExpandedPlayerComponent = memo(({
                         step={1}
                         onValueChange={handleSeek}
                         onValueCommit={handleSeekCommit}
-                        className="px-4 cursor-pointer h-3 flex items-center relative z-20"
+                        className="cursor-pointer h-3 flex items-center relative z-20"
                         color="#ffffff"
                       />
                     </div>

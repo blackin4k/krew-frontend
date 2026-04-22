@@ -284,13 +284,17 @@ export default function Visualizer({
                     ctx.globalCompositeOperation = 'source-over';
 
                     // ── Feathered bottom mask ───────────────────────────────
-                    // Fades the bottom ~30% so there is zero hard line
-                    const mask = ctx.createLinearGradient(0, H * 0.72, 0, H);
-                    mask.addColorStop(0, 'rgba(0,0,0,0)');
-                    mask.addColorStop(1, 'rgba(0,0,0,1)');
+                    // Start the fade from 45% height so the transition is long
+                    // and imperceptible — no sharp seam at the gradient origin.
+                    // fillRect covers the FULL canvas (0→H) so the transparent
+                    // top of the gradient doesn't create a visible cutoff line.
+                    const mask = ctx.createLinearGradient(0, H * 0.45, 0, H);
+                    mask.addColorStop(0,   'rgba(0,0,0,0)');
+                    mask.addColorStop(0.6, 'rgba(0,0,0,0.05)');
+                    mask.addColorStop(1,   'rgba(0,0,0,1)');
                     ctx.globalCompositeOperation = 'destination-out';
                     ctx.fillStyle = mask;
-                    ctx.fillRect(0, H * 0.72, W, H * 0.28);
+                    ctx.fillRect(0, 0, W, H);   // full canvas — no seam
                     ctx.globalCompositeOperation = 'source-over';
 
                     // ── Subtle horizontal shimmer line at wave crest ─────────
@@ -352,13 +356,14 @@ export default function Visualizer({
                     ctx.shadowBlur = 0;
                     ctx.globalCompositeOperation = 'source-over';
 
-                    // Bottom fade
-                    const fade = ctx.createLinearGradient(0, H * 0.78, 0, H);
-                    fade.addColorStop(0, 'rgba(0,0,0,0)');
-                    fade.addColorStop(1, 'rgba(0,0,0,1)');
+                    // Bottom fade — long gradient, full-canvas fillRect
+                    const fade = ctx.createLinearGradient(0, H * 0.55, 0, H);
+                    fade.addColorStop(0,   'rgba(0,0,0,0)');
+                    fade.addColorStop(0.65, 'rgba(0,0,0,0.05)');
+                    fade.addColorStop(1,   'rgba(0,0,0,1)');
                     ctx.globalCompositeOperation = 'destination-out';
                     ctx.fillStyle = fade;
-                    ctx.fillRect(0, H * 0.78, W, H * 0.22);
+                    ctx.fillRect(0, 0, W, H);
                     ctx.globalCompositeOperation = 'source-over';
 
                 // ════════════════════════════════════════════════════════════

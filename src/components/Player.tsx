@@ -1011,7 +1011,7 @@ const ExpandedPlayerComponent = memo(({
                         <>
                           {/* Loop Range Highlight */}
                           <div
-                            className="absolute top-1/2 h-2 rounded-full bg-white/10 -translate-y-1/2 transition-all pointer-events-none"
+                            className="absolute top-1/2 h-[3px] rounded-full bg-white/[0.18] -translate-y-1/2 transition-all pointer-events-none"
                             style={{
                               left: `${(loopStartTime / duration) * 100}%`,
                               width: `${((loopEndTime - loopStartTime) / duration) * 100}%`

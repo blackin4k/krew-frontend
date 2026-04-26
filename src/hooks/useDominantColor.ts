@@ -162,6 +162,14 @@ export function useCoverArtworkColors(imageUrl: string | null, colorCount: numbe
             return;
         }
 
+        // Fix: Don't retain the old album's colors while waiting for the new image to load!
+        const cached = colorCache.get(imageUrl);
+        if (cached !== undefined) {
+            setColors(cached);
+        } else {
+            setColors(null);
+        }
+
         let cancelled = false;
         loadArtworkColors(imageUrl, colorCount).then((nextColors) => {
             if (!cancelled) {

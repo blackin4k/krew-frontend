@@ -718,7 +718,15 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       const existingAudio = typeof song.audio === 'string' ? song.audio : '';
       const existingCover = typeof song.cover === 'string' ? song.cover : '';
       let data = { audio: existingAudio, cover: existingCover };
-      let syncPromise: Promise<{ audio: string; cover: string }> | null = null;
+      
+      // Fire-and-forget background sync
+      const syncPromise = playerApi.play(song.id).then((response) => ({
+        audio: response.data?.audio ?? '',
+        cover: response.data?.cover ?? '',
+      })).catch(err => {
+        console.error('Background playback sync failed:', err);
+        return { audio: '', cover: '' };
+      });
 
       if (!offlineSong.local) {
         if (!navigator.onLine && !existingAudio) {
@@ -727,13 +735,15 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
             return;
         }
 
-        syncPromise = playerApi.play(song.id).then((response) => ({
-          audio: response.data?.audio ?? '',
-          cover: response.data?.cover ?? '',
-        }));
-
+        // Only block if we have NO audio URL at all
         if (!existingAudio) {
           data = await syncPromise;
+          if (!data.audio) {
+            console.error("Missing audio URL after sync", song.id);
+            toast.error("This song is unavailable right now");
+            setIfChanged(get(), set, { isPlaying: false, isLoadingNext: false });
+            return;
+          }
         }
       }
 
@@ -748,28 +758,16 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       audio.pause();
       oppositeAudio.pause();
 
-      // Future Playback Switch for Offline files
       if (offlineSong.local && offlineSong.filePath) {
         audio.src = Capacitor.isNativePlatform()
           ? Capacitor.convertFileSrc(offlineSong.filePath)
           : offlineSong.filePath;
       } else {
-        if (!data.audio) {
-          console.error("Missing audio URL", song.id);
-          toast.error("This song is unavailable right now");
-          setIfChanged(get(), set, { isPlaying: false, isLoadingNext: false });
-          return;
-        }
         audio.src = data.audio;
       }
 
-      console.log("AUDIO SRC:", audio.src);
-
       audio.load();
 
-      // FIX #2: Resume AudioContext BEFORE audio.play().
-      // Calling play() while the context is suspended causes a dangling AudioTrack
-      // on Android (crash at the AudioFlinger/AudioTrack level).
       if (ctx.state !== 'running') {
         await ctx.resume();
       }
@@ -778,8 +776,6 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       await audio.play();
       rampGainIn(activeGain, ctx);
 
-      // BUG 3 FIX: Now that audio.play() has resolved, clear isLoadingNext.
-      // This is the safe point — the pause handler can now set isPlaying=false.
       setIfChanged(get(), set, {
         currentSong: { ...song, cover: data.cover || existingCover, audio: data.audio || existingAudio },
         isPlaying: true,
@@ -790,33 +786,21 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
         loopEndTime: audio.duration || song.duration || 0
       });
 
-      if (syncPromise && existingAudio) {
-        syncPromise
-          .then((synced) => {
-            if (!synced.audio && !synced.cover) return;
-            set((store) => {
-              if (store.currentSong?.id !== song.id) {
-                return {};
-              }
+      // Update store silently when sync completes if we used existing audio
+      if (existingAudio) {
+        syncPromise.then((synced) => {
+          if (!synced.audio && !synced.cover) return;
+          const currentStore = usePlayerStore.getState();
+          if (currentStore.currentSong?.id !== song.id) return;
 
-              const nextAudio = synced.audio || store.currentSong.audio;
-              const nextCover = synced.cover || store.currentSong.cover;
-              if (nextAudio === store.currentSong.audio && nextCover === store.currentSong.cover) {
-                return {};
-              }
-
-              return {
-                currentSong: {
-                  ...store.currentSong,
-                  audio: nextAudio,
-                  cover: nextCover,
-                },
-              };
-            });
-          })
-          .catch((error) => {
-            console.error('Playback state sync failed', error);
+          set({
+            currentSong: {
+              ...currentStore.currentSong,
+              audio: synced.audio || currentStore.currentSong.audio,
+              cover: synced.cover || currentStore.currentSong.cover,
+            },
           });
+        });
       }
 
       // FIX #1 (BULLETPROOF): Never call MusicControls.create() with duration=0.
@@ -917,35 +901,27 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     const current = songs[safeStartIndex];
     const remaining = songs.slice(safeStartIndex + 1);
 
+    // Play first song immediately (non-blocking for backend if audio exists)
     await get().playSong(current);
 
     if (get().currentSong?.id !== current.id) {
       return;
     }
 
-    try {
-      await playerApi.modifyQueue('clear', {});
-    } catch (error) {
-      console.error('Failed to clear queue before collection playback', error);
-    }
+    // Update local queue immediately
+    setIfChanged(get(), set, { queue: remaining });
 
-    const queuedSongs: Song[] = [];
-    if (get().queue.length > 0) {
-      setIfChanged(get(), set, { queue: [] });
-    }
-
-    for (const song of remaining) {
+    // Sync queue with backend in the background
+    (async () => {
       try {
-        await playerApi.addToQueue(song.id);
-        queuedSongs.push(song);
+        await playerApi.modifyQueue('clear', {});
+        for (const song of remaining) {
+          await playerApi.addToQueue(song.id);
+        }
       } catch (error) {
-        console.error(`Failed to queue song ${song.id}`, error);
+        console.error('Failed to sync queue with backend:', error);
       }
-    }
-
-    if (!areQueuesEqual(get().queue, queuedSongs)) {
-      setIfChanged(get(), set, { queue: queuedSongs });
-    }
+    })();
   },
 
   _handleCrossfadeAuto: async () => {
@@ -1129,7 +1105,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
 
     // CRITICAL FIX: Maintain service during transition
     // Set isLoadingNext and keep isPlaying true to prevent service termination
-      setIfChanged(get(), set, { isLoadingNext: true, isPlaying: true });
+    setIfChanged(get(), set, { isLoadingNext: true, isPlaying: true });
 
     // Keep notification alive during fetch
     if (Capacitor.isNativePlatform()) {
@@ -1141,25 +1117,24 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     if (queue.length > 0) {
       const nextSong = queue[0];
       const newQueue = queue.slice(1);
+      
+      // Update local state first
       setIfChanged(get(), set, { queue: newQueue });
+      
+      // Play immediately
       await get().playSong(nextSong);
 
-      if (get().currentSong?.id === nextSong.id) {
+      // Sync backend in background
+      (async () => {
         try {
           await playerApi.modifyQueue('clear', {});
-        } catch (error) {
-          console.error('Failed to clear queue after advancing playback', error);
-        }
-
-        for (const song of newQueue) {
-          try {
+          for (const song of newQueue) {
             await playerApi.addToQueue(song.id);
-          } catch (error) {
-            console.error(`Failed to re-queue song ${song.id}`, error);
           }
+        } catch (error) {
+          console.error('Failed to sync queue after next:', error);
         }
-      }
-
+      })();
       return;
     }
 

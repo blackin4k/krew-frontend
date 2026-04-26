@@ -812,6 +812,7 @@ const ExpandedPlayerComponent = memo(({
           {/* VISUALIZER - Matches Desktop (Clean) */}
           {showVisualizer && visualizerColors && !showDashboard && (
             <Visualizer
+              key={currentSong?.id || 'visualizer'}
               className="absolute bottom-0 left-0 w-full h-[90%] pointer-events-none z-0"
               colors={visualizerColors}
               mode={visualizerMode}

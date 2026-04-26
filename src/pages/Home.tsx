@@ -8,7 +8,7 @@ import { useOfflineStore } from '@/stores/offlineStore';
 import StreakCard from '@/components/StreakCard';
 
 const HOME_CACHE_KEY = 'krew_home_feed_cache_v1';
-const HOME_CACHE_TTL = 5 * 60 * 1000;
+const HOME_CACHE_TTL = 30 * 60 * 1000;
 
 interface HomeFeedCache {
   songs: Song[];
@@ -99,6 +99,7 @@ const Home = () => {
   const userKey = user?.username || 'guest';
 
   useEffect(() => {
+    // Apply cached data BEFORE any API calls
     const cachedFeed = loadHomeCache(userKey);
     if (cachedFeed) {
       setSongs(cachedFeed.songs || []);
@@ -162,11 +163,17 @@ const Home = () => {
       }
     };
 
+    // Core data first
     fetchCoreData();
-    fetchPersonalizedData();
+    
+    // Delay personalized data by 1 second
+    const timeoutId = setTimeout(() => {
+      if (!cancelled) fetchPersonalizedData();
+    }, 1000);
 
     return () => {
       cancelled = true;
+      clearTimeout(timeoutId);
     };
   }, [userKey]);
 
@@ -192,8 +199,10 @@ const Home = () => {
     return 'Good evening';
   };
 
-  // 1. Loading State with Skeleton UI
-  if (loading) {
+  const hasData = songs.length > 0 || recommendations.length > 0 || recentlyPlayed.length > 0 || because.length > 0;
+
+  // 1. Loading State with Skeleton UI - ONLY show if no cached data exists
+  if (!hasData && loading) {
     return (
       <div className="min-h-screen pb-[calc(100px+env(safe-area-inset-bottom))] bg-[#0A0A0C] px-4 md:px-6 relative font-sans">
         <div className="pt-[calc(env(safe-area-inset-top)+2rem)] mb-8">

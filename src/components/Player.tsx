@@ -367,11 +367,15 @@ export default function Player() {
   const { dominant: domColor, palette } = useCoverArtworkColors(coverUrl, 3);
 
   const baseColor = useMemo(() => {
+    // If user has an override color, base color is irrelevant
     if (visualizerColor) return null;
-    if (!domColor) return { r: 120, g: 140, b: 255 }; // Premium fallback instead of pure white
+    // While palette extraction is still loading, return null so we don't
+    // flash a hardcoded fallback color — the Visualizer will use its own default
+    if (!domColor) return null;
 
     const brightness = (domColor.r * 299 + domColor.g * 587 + domColor.b * 114) / 1000;
     if (brightness < 80) {
+      // Lighten very dark dominant colors so they're visible against the dark player
       const lighten = (val: number) => Math.round(val + (255 - val) * 0.7);
       return { r: lighten(domColor.r), g: lighten(domColor.g), b: lighten(domColor.b) };
     }
@@ -426,6 +430,14 @@ export default function Player() {
   // my ass forgot to add currentSong.id
 
   const uiColor = visualizerColor || (baseColor ? `rgb(${baseColor.r}, ${baseColor.g}, ${baseColor.b})` : "#ffffff");
+
+  // Reset user-override color whenever the song changes so the previous song's
+  // visualizerColor doesn't short-circuit the palette pipeline for the next song.
+  const setVisualizerColor = usePlayerStore((state) => state.setVisualizerColor);
+  useEffect(() => {
+    if (!currentSong?.id) return;
+    setVisualizerColor(null);
+  }, [currentSong?.id, setVisualizerColor]);
 
   useEffect(() => {
     if (!currentSong) return

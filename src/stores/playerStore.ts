@@ -436,12 +436,11 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     _audioA?.load();
     _audioB?.load();
 
-    // Close AudioContext if running (Releases hardware on Android).
-    // Use close() not suspend() — suspend() leaves the context reusable but with
-    // stale consumer counts, causing the initAudio early-return guard to skip
-    // re-initialization and leave analyser: null on the next song.
+    // Suspend AudioContext to release hardware on Android without permanently
+    // destroying the nodes (close() would invalidate gainA/gainB and break
+    // playSong which reuses those nodes without calling initAudio again).
     if (_audioCtx && _audioCtx.state !== 'closed') {
-      _audioCtx.close().catch(console.error);
+      _audioCtx.suspend().catch(console.error);
     }
 
     setIfChanged(state, set, {

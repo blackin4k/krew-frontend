@@ -311,8 +311,23 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   visualizerColor: null,
   attachVisualizer: () => {
     const state = get();
-    const nextConsumers = state._visualizerConsumers + 1;
-    setIfChanged(state, set, { _visualizerConsumers: nextConsumers });
+
+    // If audio pipeline hasn't been initialized yet, do it now.
+    // This handles the case where Visualizer mounts before Player calls initAudio().
+    if (!state._audioCtx || state._audioCtx.state === 'closed') {
+      get().initAudio();
+    }
+
+    const nextConsumers = get()._visualizerConsumers + 1;
+    setIfChanged(get(), set, { _visualizerConsumers: nextConsumers });
+
+    // Resume AudioContext if it was suspended (common on Capacitor/Android WebView
+    // after cleanupAudio suspends the context during idle)
+    const ctx = get()._audioCtx;
+    if (ctx && ctx.state === 'suspended') {
+      ctx.resume().catch(console.warn);
+    }
+
     syncAnalyserRouting({ ...get(), _visualizerConsumers: nextConsumers }, set);
   },
   detachVisualizer: () => {
@@ -421,9 +436,12 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     _audioA?.load();
     _audioB?.load();
 
-    // Close AudioContext if running (Releases hardware on Android)
+    // Close AudioContext if running (Releases hardware on Android).
+    // Use close() not suspend() — suspend() leaves the context reusable but with
+    // stale consumer counts, causing the initAudio early-return guard to skip
+    // re-initialization and leave analyser: null on the next song.
     if (_audioCtx && _audioCtx.state !== 'closed') {
-      _audioCtx.suspend().catch(console.error);
+      _audioCtx.close().catch(console.error);
     }
 
     setIfChanged(state, set, {
@@ -670,7 +688,11 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       _reverbGainNode: null
     });
 
-    syncAnalyserRouting(get(), set);
+    // Defer syncAnalyserRouting by one JS tick so that any already-mounted
+    // Visualizer's attachVisualizer() useEffect (which runs synchronously after
+    // this initAudio call returns) has time to increment _visualizerConsumers first.
+    // Without this, syncAnalyserRouting sees consumers=0 and sets analyser:null.
+    setTimeout(() => syncAnalyserRouting(get(), set), 0);
   },
 
   playSong: async (song: Song) => {

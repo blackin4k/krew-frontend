@@ -55,6 +55,7 @@ export default function Visualizer({
 
     // Refs for dynamic props to avoid restarting the animation loop
     const isPlayingRef = useRef(isPlaying);
+    const prevColorKeyRef = useRef<string>('');
     const targetColorsRef = useRef<number[][]>([
         boost(...parseRGB('rgba(180,100,255,1)')),
         boost(...parseRGB('rgba(80,150,255,1)')),
@@ -69,13 +70,39 @@ export default function Visualizer({
 
     // Update dynamic refs without triggering full re-renders of the canvas loop
     useEffect(() => { isPlayingRef.current = isPlaying; }, [isPlaying]);
+    // Always update colors when React fires this effect (deps: colors or songId changed)
     useEffect(() => {
-        targetColorsRef.current = [
+        if (!colors || colors.length === 0) return;
+
+        // Always update colors on change signal
+        prevColorKeyRef.current = currentSongId?.toString() || '';
+
+        const next = [
             boost(...parseRGB(colors[0] ?? 'rgba(180,100,255,1)')),
             boost(...parseRGB(colors[1] ?? 'rgba(80,150,255,1)')),
             boost(...parseRGB(colors[2] ?? 'rgba(255,80,180,1)'))
         ];
-    }, [colors]);
+
+        const cur = currentColorsRef.current;
+
+        let totalDelta = 0;
+        for (let i = 0; i < 3; i++) {
+            for (let j = 0; j < 3; j++) {
+                totalDelta += Math.abs(next[i][j] - cur[i][j]);
+            }
+        }
+
+        targetColorsRef.current = next;
+
+        // snap if big change (new song)
+        if (totalDelta > 300) {
+            for (let i = 0; i < 3; i++) {
+                for (let j = 0; j < 3; j++) {
+                    cur[i][j] += (next[i][j] - cur[i][j]) * 0.8;
+                }
+            }
+        }
+    }, [colors, currentSongId]);
     useEffect(() => {
         analyserRef.current = analyser;
 
@@ -137,8 +164,8 @@ export default function Visualizer({
                 const currentColors = currentColorsRef.current;
                 for (let i = 0; i < 3; i++) {
                     for (let j = 0; j < 3; j++) {
-                        // Smoothly lerp towards target album colors
-                        currentColors[i][j] += (targetColors[i][j] - currentColors[i][j]) * 0.04;
+                        // Smoothly lerp towards target album colors (0.12 = ~20 frames to 90%)
+                        currentColors[i][j] += (targetColors[i][j] - currentColors[i][j]) * 0.12;
                     }
                 }
                 const [r0, g0, b0] = currentColors[0];

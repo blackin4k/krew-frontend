@@ -380,12 +380,12 @@ export default function Player() {
 
   const paletteColors = useMemo(() => {
     if (!palette || palette.length === 0) return null;
-    
+
     // Ensure we always have 3 valid colors by duplicating if needed
     const primary = palette[0];
     const secondary = palette[1] || primary;
     const accent = palette[2] || secondary;
-    
+
     // Sort by brightness to ensure logical gradient (dimmer -> brighter -> punchy)
     const sorted = [primary, secondary, accent].sort((a, b) => {
       const lumA = (a.r * 299 + a.g * 587 + a.b * 114) / 1000;
@@ -406,7 +406,10 @@ export default function Player() {
     }
 
     if (paletteColors) {
-      return paletteColors;
+      // Spread into a new array to guarantee a fresh reference when palette content changes.
+      // Without this, React's useMemo returns the same array reference and downstream
+      // useEffect([colors]) comparisons via Object.is never fire.
+      return [...paletteColors];
     }
 
     if (!baseColor) {
@@ -418,7 +421,9 @@ export default function Player() {
       `rgba(${Math.min(baseColor.r + 40, 255)}, ${Math.min(baseColor.g + 40, 255)}, ${Math.min(baseColor.b + 40, 255)}, 0.8)`,
       `rgba(${Math.max(baseColor.r - 40, 0)}, ${Math.max(baseColor.g - 40, 0)}, ${Math.max(baseColor.b - 40, 0)}, 1)`
     ];
-  }, [visualizerColor, paletteColors, baseColor]);
+  }, [visualizerColor, paletteColors, baseColor, currentSong?.id]);
+
+  // my ass forgot to add currentSong.id
 
   const uiColor = visualizerColor || (baseColor ? `rgb(${baseColor.r}, ${baseColor.g}, ${baseColor.b})` : "#ffffff");
 
@@ -812,7 +817,6 @@ const ExpandedPlayerComponent = memo(({
           {/* VISUALIZER - Matches Desktop (Clean) */}
           {showVisualizer && visualizerColors && !showDashboard && (
             <Visualizer
-              key={currentSong?.id || 'visualizer'}
               className="absolute bottom-0 left-0 w-full h-[90%] pointer-events-none z-0"
               colors={visualizerColors}
               mode={visualizerMode}

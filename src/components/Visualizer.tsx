@@ -38,7 +38,7 @@ const BEAT_COOLDOWN_MS = 120;
 
 export default function Visualizer({
     className = 'absolute bottom-0 left-0 w-full h-[400px] pointer-events-none z-0',
-    colors = ['rgba(160,160,170,0.6)', 'rgba(200,200,210,0.8)', 'rgba(120,120,130,1)'],
+    colors = ['rgba(60,120,200,0.8)', 'rgba(100,180,240,0.9)', 'rgba(40,80,160,1)'],
     height,
     mode = 'wave',
 }: VisualizerProps) {
@@ -70,9 +70,9 @@ export default function Visualizer({
     // Refs for dynamic props to avoid restarting the animation loop
     const isPlayingRef = useRef(isPlaying);
     const targetColorsRef = useRef<number[][]>([
-        boost(...parseRGB('rgba(160,160,170,0.6)')),
-        boost(...parseRGB('rgba(200,200,210,0.8)')),
-        boost(...parseRGB('rgba(120,120,130,1)'))
+        boost(...parseRGB('rgba(60,120,200,0.8)')),
+        boost(...parseRGB('rgba(100,180,240,0.9)')),
+        boost(...parseRGB('rgba(40,80,160,1)'))
     ]);
     const currentColorsRef = useRef<number[][]>([...targetColorsRef.current.map(c => [...c])]);
 
@@ -88,9 +88,9 @@ export default function Visualizer({
         if (!colors || colors.length === 0) return;
 
         const next = [
-            boost(...parseRGB(colors[0] ?? 'rgba(160,160,170,0.6)')),
-            boost(...parseRGB(colors[1] ?? 'rgba(200,200,210,0.8)')),
-            boost(...parseRGB(colors[2] ?? 'rgba(120,120,130,1)'))
+            boost(...parseRGB(colors[0] ?? 'rgba(60,120,200,0.8)')),
+            boost(...parseRGB(colors[1] ?? 'rgba(100,180,240,0.9)')),
+            boost(...parseRGB(colors[2] ?? 'rgba(40,80,160,1)'))
         ];
 
         const cur = currentColorsRef.current;

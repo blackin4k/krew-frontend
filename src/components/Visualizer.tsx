@@ -29,6 +29,11 @@ const rc = (r:number,g:number,b:number,a:number) =>
 /** Total RGB channel delta above which we snap colors instantly (new song) */
 const SNAP_THRESHOLD = 300;
 
+/** Beat detection: bass must jump this much above rolling average to trigger */
+const BEAT_THRESHOLD = 0.18;
+/** Minimum ms between detected beats to avoid retriggering */
+const BEAT_COOLDOWN_MS = 120;
+
 // ── component ─────────────────────────────────────────────────────────────────
 
 export default function Visualizer({
@@ -55,6 +60,12 @@ export default function Visualizer({
     
     // For bar mode peaks
     const peaksRef     = useRef<Float32Array|null>(null);
+
+    // Beat detection state (lives in refs to avoid React re-renders)
+    const prevBassRef  = useRef(0);       // previous frame's bass level
+    const beatRef      = useRef(0);       // current beat intensity (0..1), fast attack / slow decay
+    const lastBeatRef  = useRef(0);       // timestamp of last detected beat
+    const flashRef     = useRef(0);       // brightness flash intensity (0..1)
 
     // Refs for dynamic props to avoid restarting the animation loop
     const isPlayingRef = useRef(isPlaying);
@@ -111,6 +122,11 @@ export default function Visualizer({
         peaksRef.current = null;
         energyRef.current = 0;
         frameRef.current = 0;
+        // Reset beat state for new song
+        prevBassRef.current = 0;
+        beatRef.current = 0;
+        lastBeatRef.current = 0;
+        flashRef.current = 0;
 
         const canvas = canvasRef.current;
         const ctx = canvas?.getContext('2d');
@@ -207,14 +223,33 @@ export default function Visualizer({
 
                 for (let i=0; i<bufLen; i++) {
                     const v = data[i];
-                    // Fast attack (0.8) to hit transients instantly, slower release (0.15) for smooth drop
-                    const lerpRate = v > sm[i] ? 0.8 : 0.15;
+                    // Sharper attack (0.9) to catch transients/kicks instantly, controlled decay
+                    const lerpRate = v > sm[i] ? 0.9 : 0.13;
                     sm[i] += (v - sm[i]) * lerpRate;
                     if (i < bassEnd) bassSum += sm[i];
                 }
                 const bass = (bassSum / bassEnd) / 255;
-                // Exaggerate bass for visual punch (reduced for controlled motion)
-                const bassE = bass * bass * E * 1.2;
+                // Exaggerate bass for visual punch
+                const bassE = bass * bass * E * 1.5;
+
+                // ── beat detection ───────────────────────────────────────────
+                const bassDelta = bass - prevBassRef.current;
+                prevBassRef.current = bass;
+
+                if (bassDelta > BEAT_THRESHOLD && (now - lastBeatRef.current) > BEAT_COOLDOWN_MS) {
+                    // Beat detected! Spike the beat intensity
+                    beatRef.current = Math.min(1, beatRef.current + 0.6 + bassDelta * 2);
+                    flashRef.current = Math.min(1, 0.5 + bassDelta * 3);
+                    lastBeatRef.current = now;
+                }
+                // Decay beat intensity (fast decay for snappy feel)
+                beatRef.current *= 0.88;
+                flashRef.current *= 0.82;
+                if (beatRef.current < 0.005) beatRef.current = 0;
+                if (flashRef.current < 0.005) flashRef.current = 0;
+
+                const beat = beatRef.current;
+                const flash = flashRef.current;
 
                 ctx.clearRect(0, 0, W, H);
 
@@ -229,6 +264,8 @@ export default function Visualizer({
                         yFrac:number, speed:number, amp:number,
                         alpha:number, strokeTop:boolean
                     ) => {
+                        // Beat-boosted amplitude
+                        const beatAmp = amp * (1 + beat * 0.6);
                         const baseY  = H * (1 - yFrac);
                         const T      = now * speed;
                         // Coarser steps on mobile for performance
@@ -242,11 +279,13 @@ export default function Visualizer({
                             
                             const y = baseY
                                 // Organic sine sway for background movement
-                                - Math.sin(x*0.005 + T) * amp * (0.3 + E*0.2)
-                                // Audio-reactive displacement
-                                - freq * amp * 1.5 * E
-                                // Bass bump
-                                - bassE * amp * 1.2;
+                                - Math.sin(x*0.005 + T) * beatAmp * (0.3 + E*0.2)
+                                // Audio-reactive displacement (boosted by beat)
+                                - freq * beatAmp * 1.5 * E
+                                // Bass bump + beat kick
+                                - bassE * beatAmp * 1.2
+                                // Beat pulse: sharp downward kick
+                                - beat * amp * 0.4;
                             
                             pts.push([x, y]);
                         }
@@ -264,12 +303,16 @@ export default function Visualizer({
 
                         const topY = pts.reduce((m,p)=>p[1]<m?p[1]:m, H);
                         const grad = ctx.createLinearGradient(0, topY, 0, H+60);
-                        grad.addColorStop(0,   rc(cr,cg,cb, 0));
-                        grad.addColorStop(0.3, rc(cr,cg,cb, alpha*0.4*E));
-                        grad.addColorStop(1,   rc(cr,cg,cb, alpha*E));
+                        // Flash: blend toward white on beats for brightness spike
+                        const fr = Math.min(255, cr + flash * (255 - cr));
+                        const fg = Math.min(255, cg + flash * (255 - cg));
+                        const fb = Math.min(255, cb + flash * (255 - cb));
+                        grad.addColorStop(0,   rc(fr,fg,fb, 0));
+                        grad.addColorStop(0.3, rc(fr,fg,fb, alpha*0.4*E * (1 + flash*0.5)));
+                        grad.addColorStop(1,   rc(fr,fg,fb, alpha*E));
                         
                         ctx.fillStyle = grad;
-                        if (!mob) { ctx.shadowBlur = 10 * (1 + bassE); ctx.shadowColor = rc(cr,cg,cb,0.8); }
+                        if (!mob) { ctx.shadowBlur = 10 * (1 + bassE + beat*8); ctx.shadowColor = rc(fr,fg,fb,0.8); }
                         ctx.fill();
                         ctx.shadowBlur = 0;
 
@@ -335,7 +378,8 @@ export default function Visualizer({
                     for (let i=0; i<bars; i++) {
                         const idx  = Math.floor((i/bars)*bufLen);
                         const val  = sm[idx] / 255 * E;
-                        const barH = val * H * 0.8;
+                        // Beat boost: bars punch taller on kicks
+                        const barH = val * H * 0.8 * (1 + beat * 0.4);
                         const x    = i * (barW+gap);
                         
                         // Color interpolation across the bars
@@ -356,8 +400,12 @@ export default function Visualizer({
                         // Draw main bar
                         if (barH >= 1) {
                             const grad = ctx.createLinearGradient(0, H-barH, 0, H);
-                            grad.addColorStop(0, rc(cr,cg,cb, 0.9));
-                            grad.addColorStop(1, rc(cr,cg,cb, 0.2));
+                            // Flash: brighten bars on beat
+                            const br = Math.min(255, cr + flash * (255-cr) * 0.6);
+                            const bg_ = Math.min(255, cg + flash * (255-cg) * 0.6);
+                            const bb = Math.min(255, cb + flash * (255-cb) * 0.6);
+                            grad.addColorStop(0, rc(br,bg_,bb, 0.9 + flash*0.1));
+                            grad.addColorStop(1, rc(br,bg_,bb, 0.2));
                             ctx.fillStyle = grad;
                             
                             if (!mob) { ctx.shadowBlur = 10 + val*20; ctx.shadowColor = rc(cr,cg,cb,0.8); }
@@ -401,7 +449,8 @@ export default function Visualizer({
                     ctx.globalCompositeOperation = 'lighter';
 
                     // Pulsing core
-                    const pulseR = radius * (0.6 + bassE * 0.3) * E;
+                    // Beat-reactive pulse: core breathes with kicks
+                    const pulseR = radius * (0.6 + bassE * 0.3 + beat * 0.2) * E;
                     const rg = ctx.createRadialGradient(cx,cy,0,cx,cy,pulseR);
                     rg.addColorStop(0,   rc(r0,g0,b0, 0.3*E));
                     rg.addColorStop(0.5, rc(r1,g1,b1, 0.1*E));
@@ -424,7 +473,8 @@ export default function Visualizer({
                     for (let i=0; i<bars; i++) {
                         const idx   = Math.floor((i/bars)*bufLen);
                         const val   = sm[idx]/255;
-                        const barH  = val * radius * 1.2 * E;
+                        // Beat kick: bars extend further on detected beats
+                        const barH  = val * radius * 1.2 * E * (1 + beat * 0.5);
                         if (barH < 1) continue;
 
                         const angle = i*step - Math.PI/2;

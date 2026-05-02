@@ -796,6 +796,7 @@ const ExpandedPlayerComponent = memo(({
             }
           }}
           className="fixed inset-0 z-50 flex h-[100dvh] max-h-[100dvh] flex-col overflow-hidden bg-[#050505]"
+          style={{ touchAction: 'none' }}
         >
           {/* BACKGROUND - Blurred Cover Image */}
           <div className="absolute inset-0 overflow-hidden pointer-events-none">
@@ -817,7 +818,7 @@ const ExpandedPlayerComponent = memo(({
           {/* VISUALIZER - Matches Desktop (Clean) */}
           {showVisualizer && visualizerColors && !showDashboard && (
             <Visualizer
-              className="absolute bottom-0 left-0 w-full h-[90%] pointer-events-none z-0"
+              className="absolute inset-0 w-full h-full pointer-events-none z-0"
               colors={visualizerColors}
               mode={visualizerMode}
             />
@@ -929,7 +930,7 @@ const ExpandedPlayerComponent = memo(({
             </div>
 
             {/* Scrollable main content */}
-            <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain no-scrollbar">
+            <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain no-scrollbar" style={{ touchAction: 'pan-y' }}>
               <div className="mx-auto flex min-h-full w-full flex-col items-center gap-4 py-2 pb-6 sm:gap-5">
 
                 {/* 2. ARTWORK */}

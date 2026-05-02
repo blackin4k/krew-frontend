@@ -26,6 +26,9 @@ function boost(r:number,g:number,b:number,factor=1.2):[number,number,number]{
 const rc = (r:number,g:number,b:number,a:number) =>
     `rgba(${r|0},${g|0},${b|0},${Math.max(0,Math.min(1,a))})`;
 
+/** Total RGB channel delta above which we snap colors instantly (new song) */
+const SNAP_THRESHOLD = 300;
+
 // ── component ─────────────────────────────────────────────────────────────────
 
 export default function Visualizer({
@@ -55,7 +58,6 @@ export default function Visualizer({
 
     // Refs for dynamic props to avoid restarting the animation loop
     const isPlayingRef = useRef(isPlaying);
-    const prevColorKeyRef = useRef<string>('');
     const targetColorsRef = useRef<number[][]>([
         boost(...parseRGB('rgba(180,100,255,1)')),
         boost(...parseRGB('rgba(80,150,255,1)')),
@@ -73,9 +75,6 @@ export default function Visualizer({
     // Always update colors when React fires this effect (deps: colors or songId changed)
     useEffect(() => {
         if (!colors || colors.length === 0) return;
-
-        // Always update colors on change signal
-        prevColorKeyRef.current = currentSongId?.toString() || '';
 
         const next = [
             boost(...parseRGB(colors[0] ?? 'rgba(180,100,255,1)')),
@@ -95,7 +94,7 @@ export default function Visualizer({
         targetColorsRef.current = next;
 
         // snap if big change (new song)
-        if (totalDelta > 300) {
+        if (totalDelta > SNAP_THRESHOLD) {
             for (let i = 0; i < 3; i++) {
                 for (let j = 0; j < 3; j++) {
                     cur[i][j] += (next[i][j] - cur[i][j]) * 0.8;

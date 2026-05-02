@@ -509,6 +509,13 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     gainA.gain.value = 1;
     gainB.gain.value = 0;
 
+    // Connect gains to destination immediately — audio MUST always reach the
+    // speaker regardless of whether the Visualizer is mounted.
+    // syncAnalyserRouting will reconnect them (with analyser tap if needed)
+    // but having this here ensures audio works even if routing is skipped.
+    gainA.connect(ctx.destination);
+    gainB.connect(ctx.destination);
+
     const analyser = ctx.createAnalyser();
     analyser.fftSize = get().performanceMode === 'lite' ? MOBILE_ANALYSER_FFT_SIZE : DESKTOP_ANALYSER_FFT_SIZE;
     analyser.smoothingTimeConstant = 0.75;
@@ -687,15 +694,13 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       _reverbGainNode: null
     });
 
-    // Only run routing immediately if the Visualizer is already mounted
-    // (i.e. it called attachVisualizer() before initAudio() ran).
-    // If consumers=0, the Visualizer hasn't mounted yet — attachVisualizer()
-    // will call syncAnalyserRouting itself once it does.
-    // This replaces the previous setTimeout(0) which was unreliable on Android
-    // WebView due to its stricter JS task scheduler ordering.
-    if (get()._visualizerConsumers > 0) {
-      syncAnalyserRouting(get(), set);
-    }
+    // Always run routing after initializing the audio graph.
+    // syncAnalyserRouting handles both cases internally:
+    //   - consumers = 0 → gains connect to destination only (no analyser tap)
+    //   - consumers > 0 → gains connect to destination + analyser tap
+    // Previously this was guarded by `if (consumers > 0)` which skipped
+    // destination routing entirely and silenced audio on fresh init.
+    syncAnalyserRouting(get(), set);
   },
 
   playSong: async (song: Song) => {

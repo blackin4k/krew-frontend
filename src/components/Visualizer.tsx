@@ -36,12 +36,14 @@ export default function Visualizer({
 }: VisualizerProps) {
     const canvasRef        = useRef<HTMLCanvasElement>(null);
     const analyser         = usePlayerStore(s => s.analyser);
+    const currentSongId    = usePlayerStore(s => s.currentSong?.id ?? null);
     const isPlaying        = usePlayerStore(s => s.isPlaying);
     const performanceMode  = usePlayerStore(s => s.performanceMode);
     const attachVisualizer = usePlayerStore(s => s.attachVisualizer);
     const detachVisualizer = usePlayerStore(s => s.detachVisualizer);
 
     const animRef      = useRef<number>();
+    const analyserRef  = useRef<AnalyserNode|null>(analyser);
     const energyRef    = useRef(0);
     const rawRef       = useRef<Uint8Array|null>(null);
     const smRef        = useRef<Float32Array|null>(null);
@@ -74,6 +76,22 @@ export default function Visualizer({
             boost(...parseRGB(colors[2] ?? 'rgba(255,80,180,1)'))
         ];
     }, [colors]);
+    useEffect(() => {
+        analyserRef.current = analyser;
+
+        const nextBufferLength = analyser?.frequencyBinCount ?? 0;
+        rawRef.current = nextBufferLength ? new Uint8Array(nextBufferLength) : null;
+        smRef.current = nextBufferLength ? new Float32Array(nextBufferLength) : null;
+        peaksRef.current = null;
+        energyRef.current = 0;
+        frameRef.current = 0;
+
+        const canvas = canvasRef.current;
+        const ctx = canvas?.getContext('2d');
+        if (canvas && ctx) {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+        }
+    }, [analyser, currentSongId]);
 
     useEffect(() => {
         const lite   = performanceMode === 'lite';
@@ -111,7 +129,8 @@ export default function Visualizer({
                 ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
                 const W = cw, H = ch;
-                const bufLen = analyser ? analyser.frequencyBinCount : 128;
+                const liveAnalyser = analyserRef.current;
+                const bufLen = liveAnalyser ? liveAnalyser.frequencyBinCount : 128;
 
                 // ── dynamic color interpolation ──────────────────────────────
                 const targetColors = targetColorsRef.current;
@@ -137,13 +156,13 @@ export default function Visualizer({
 
                 // ── frequency data ───────────────────────────────────────────
                 let data: Uint8Array;
-                if (analyser) {
+                if (liveAnalyser) {
                     let raw = rawRef.current;
                     if (!raw || raw.length!==bufLen) {
                         raw = new Uint8Array(bufLen);
                         rawRef.current = raw;
                     }
-                    analyser.getByteFrequencyData(raw as any);
+                    liveAnalyser.getByteFrequencyData(raw as any);
                     data = raw;
                 } else {
                     // Graceful fallback if analyser is unavailable
@@ -450,12 +469,13 @@ export default function Visualizer({
             obs?.disconnect();
             if (typeof document!=='undefined') document.removeEventListener('visibilitychange', onVis);
             if (animRef.current) { cancelAnimationFrame(animRef.current); animRef.current=undefined; }
+            analyserRef.current = null;
             rawRef.current = null; 
             smRef.current = null;
             peaksRef.current = null;
         };
-    // Removed colors and isPlaying from dependencies to prevent harsh loop resets!
-    }, [analyser, mode, performanceMode]);
+    // Analyser changes are handled via analyserRef to avoid stale closures in the RAF loop.
+    }, [mode, performanceMode]);
 
     return <canvas ref={canvasRef} className={className} style={height?{height}:undefined} />;
 }

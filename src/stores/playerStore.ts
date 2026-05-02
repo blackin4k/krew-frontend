@@ -255,13 +255,13 @@ const syncAnalyserRouting = (
   _gainA.connect(_audioCtx.destination);
   _gainB.connect(_audioCtx.destination);
 
-  if (_analyserNode) {
+  if (shouldUseAnalyser && _analyserNode) {
     _gainA.connect(_analyserNode);
     _gainB.connect(_analyserNode);
   }
 
   setIfChanged(state, setState, {
-    analyser: _analyserNode,
+    analyser: shouldUseAnalyser ? _analyserNode : null,
     _analyserAttached: shouldUseAnalyser,
   });
 };

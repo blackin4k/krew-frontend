@@ -47,8 +47,6 @@ export default function Visualizer({
     const currentSongId    = usePlayerStore(s => s.currentSong?.id ?? null);
     const isPlaying        = usePlayerStore(s => s.isPlaying);
     const performanceMode  = usePlayerStore(s => s.performanceMode);
-    const attachVisualizer = usePlayerStore(s => s.attachVisualizer);
-    const detachVisualizer = usePlayerStore(s => s.detachVisualizer);
 
     const animRef      = useRef<number>();
     const analyserRef  = useRef<AnalyserNode|null>(analyser);
@@ -77,9 +75,14 @@ export default function Visualizer({
     const currentColorsRef = useRef<number[][]>([...targetColorsRef.current.map(c => [...c])]);
 
     useEffect(() => {
+        // Use getState() directly to avoid React re-render timing dependencies.
+        // On Android WebView, Zustand selector subscriptions can introduce subtle
+        // ordering issues; getState() is synchronous and layout-independent.
+        const { attachVisualizer, detachVisualizer } = usePlayerStore.getState();
         attachVisualizer();
         return () => detachVisualizer();
-    }, [attachVisualizer, detachVisualizer]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     // Update dynamic refs without triggering full re-renders of the canvas loop
     useEffect(() => { isPlayingRef.current = isPlaying; }, [isPlaying]);

@@ -688,11 +688,15 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       _reverbGainNode: null
     });
 
-    // Defer syncAnalyserRouting by one JS tick so that any already-mounted
-    // Visualizer's attachVisualizer() useEffect (which runs synchronously after
-    // this initAudio call returns) has time to increment _visualizerConsumers first.
-    // Without this, syncAnalyserRouting sees consumers=0 and sets analyser:null.
-    setTimeout(() => syncAnalyserRouting(get(), set), 0);
+    // Only run routing immediately if the Visualizer is already mounted
+    // (i.e. it called attachVisualizer() before initAudio() ran).
+    // If consumers=0, the Visualizer hasn't mounted yet — attachVisualizer()
+    // will call syncAnalyserRouting itself once it does.
+    // This replaces the previous setTimeout(0) which was unreliable on Android
+    // WebView due to its stricter JS task scheduler ordering.
+    if (get()._visualizerConsumers > 0) {
+      syncAnalyserRouting(get(), set);
+    }
   },
 
   playSong: async (song: Song) => {
